@@ -1,0 +1,13 @@
+{
+  "authority_id": "fresh_rollout_v21_smoke",
+  "budget_fractions": [0.50, 0.75, 1.00],
+  "episode_budget_mode": "inherit_from_protocol",
+  "manifest_name": "smoke_trace_v21",
+  "metric_profile": "budget_ladder_v1",
+  "num_trials_per_task": 1,
+  "schema_version": "openpi_libero_fresh_rollout_manifest_v21",
+  "seed_manifest": [7],
+  "task_ids": [0],
+  "task_suite_name": "libero_spatial",
+  "variant_scope": ["stock_libero_ref_v1"]
+}

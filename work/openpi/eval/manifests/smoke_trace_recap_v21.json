@@ -1,0 +1,29 @@
+{
+  "authority_id": "fresh_rollout_v21_lite",
+  "budget_fractions": [
+    0.5,
+    0.75,
+    1.0
+  ],
+  "episode_budget_mode": "inherit_from_protocol",
+  "manifest_name": "smoke_trace_recap_v21",
+  "metric_profile": "budget_ladder_v1",
+  "num_trials_per_task": 2,
+  "schema_version": "openpi_libero_fresh_rollout_manifest_v21",
+  "seed_manifest": [
+    7
+  ],
+  "selection_policy": "openpi_refactor_recap_best_smoke_v1",
+  "selection_source": "agent/artifacts/openpi_recap_loop/iter0/eval/eval_summary.json",
+  "selection_source_hash": "openpi_refactor_recap_best_smoke_selection_v1",
+  "task_ids": [
+    0
+  ],
+  "task_suite_name": "libero_spatial",
+  "variant_scope": [
+    "stock_libero_ref_v1",
+    "fixedadv_relabel8d_control_v1",
+    "recap_only_relabel8d_v2",
+    "recap_shuffledadv_diag_v1"
+  ]
+}

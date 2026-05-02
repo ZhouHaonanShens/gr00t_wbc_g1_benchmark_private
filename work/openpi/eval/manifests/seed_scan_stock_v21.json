@@ -1,0 +1,13 @@
+{
+  "authority_id": "fresh_rollout_v21_scan",
+  "budget_fractions": [0.50, 0.75, 1.00],
+  "episode_budget_mode": "inherit_from_protocol",
+  "manifest_name": "seed_scan_stock_v21",
+  "metric_profile": "budget_ladder_v1",
+  "num_trials_per_task": 2,
+  "schema_version": "openpi_libero_fresh_rollout_manifest_v21",
+  "seed_manifest": [7, 17, 27, 37, 47, 57, 67, 77, 87, 97, 107, 117, 127, 137, 147, 157],
+  "task_ids": [0, 1],
+  "task_suite_name": "libero_spatial",
+  "variant_scope": ["stock_libero_ref_v1"]
+}

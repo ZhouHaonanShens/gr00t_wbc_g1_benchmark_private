@@ -1,0 +1,72 @@
+# Python / venv
+/.venv/
+/.venv
+**/__pycache__/
+*.pyc
+
+# Local caches / tooling
+/.ruff_cache/
+/.sisyphus/
+/.pytest_cache/
+/.opencode/
+/.omc/
+/.omx/
+/.anchor/
+/.codex
+.mypy_cache/
+.agent/
+
+# Runtime outputs (large / generated)
+/agent/runtime_logs/
+/agent/runtime_logs
+/agent/artifacts/
+/agent/artifacts
+/agent/artifacts_nvme_legacy_*/
+/agent/artifacts_nvme_legacy_*
+/agent/runtime_logs_nvme_legacy_*/
+/agent/runtime_logs_nvme_legacy_*
+/work/agent/artifacts/
+
+# AI workflow / planning / session artifacts
+/agent/logs/
+/agent/exchange/
+/agent/prompts/
+/agent/tutorials/
+/agent/archive/
+
+# Reference materials (papers, large PDFs)
+/.reference/
+
+# Test-generated visibility fixtures
+/tests/openpi/.tmp_visibility_check/
+
+# Third-party sources
+# We treat `submodules/**` as fetched-on-demand third-party code.
+# Keep only the local guide file under version control.
+/submodules/*
+!/submodules/README.md
+
+# Common local files
+.env
+.env.*
+
+# direnv
+.direnv/
+.envrc
+
+# Jupyter
+**/.ipynb_checkpoints/
+
+# Editor
+.vscode/
+.idea/
+
+# OS noise
+**/.DS_Store
+Thumbs.db
+
+# Generic temp/logs
+*.log
+*.tmp
+*.swp
+*~

@@ -1,0 +1,16 @@
+{
+  "schema_version": "v22_calibration_early_stop_policy_v1",
+  "allowed_inputs": ["A", "optional_B"],
+  "forbidden_inputs": ["C", "X"],
+  "headroom_success_rate_min": 0.30,
+  "headroom_success_rate_max": 0.85,
+  "trace_completeness_min": 0.95,
+  "timeout_rate_max": 0.35,
+  "allowed_early_stop_reasons": [
+    "A_success_rate_clearly_above_headroom_max",
+    "A_success_rate_clearly_below_headroom_min",
+    "trace_completeness_too_low",
+    "timeout_rate_too_high"
+  ],
+  "forbidden_early_stop_reason_word_tokens": ["C", "X"]
+}

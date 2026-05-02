@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "p1_episode_record_v1",
+  "title": "P0 Phase 1 episode record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "cell",
+    "seed",
+    "indicator_mode",
+    "outer_steps",
+    "success",
+    "terminated",
+    "truncated",
+    "max_apple_lift_z",
+    "final_apple_height_z",
+    "failure_reason",
+    "failure_stage_guess"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "p1_episode_record_v1"
+    },
+    "cell": {
+      "enum": [
+        "P0a_post_recap_nenvs_1",
+        "P0b_base_reference_nenvs_1"
+      ]
+    },
+    "seed": {
+      "type": "integer"
+    },
+    "indicator_mode": {
+      "enum": [
+        "positive",
+        "omit",
+        "negative"
+      ]
+    },
+    "outer_steps": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "terminated": {
+      "type": "boolean"
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "max_apple_lift_z": {
+      "type": "number"
+    },
+    "final_apple_height_z": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "failure_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "failure_stage_guess": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "success": {
+            "const": true
+          }
+        },
+        "required": [
+          "success"
+        ]
+      },
+      "then": {
+        "properties": {
+          "failure_reason": {
+            "type": "null"
+          },
+          "failure_stage_guess": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "failure_reason": {
+            "enum": [
+              "truncated_without_success",
+              "terminated_without_success",
+              "done_without_success",
+              "outer_step_budget_exhausted",
+              "episode_incomplete_without_success",
+              "mujoco_crash",
+              "server_disconnect"
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "failure_reason": {
+                  "enum": [
+                    "mujoco_crash",
+                    "server_disconnect"
+                  ]
+                }
+              },
+              "required": [
+                "failure_reason"
+              ]
+            },
+            "then": {
+              "properties": {
+                "failure_stage_guess": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "failure_stage_guess": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

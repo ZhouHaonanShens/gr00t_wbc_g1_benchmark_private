@@ -1,0 +1,9 @@
+{
+  "eval_authority": "fresh_rollout_v2",
+  "manifest_name": "rollout_strong_v2",
+  "num_trials_per_task": 4,
+  "schema_version": "openpi_libero_rollout_eval_manifest_v2",
+  "seed_manifest": [7, 17, 27, 37, 47, 57],
+  "task_ids": [0, 1],
+  "task_suite_name": "libero_spatial"
+}

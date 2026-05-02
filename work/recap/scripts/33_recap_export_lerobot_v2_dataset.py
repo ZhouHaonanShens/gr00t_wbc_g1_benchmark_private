@@ -1,0 +1,250 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import contextlib
+import datetime as _dt
+import importlib
+import os
+import signal
+import sys
+import time
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any, cast
+
+sys.dont_write_bytecode = True
+os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
+
+
+# =====================
+# USER Config (edit)
+# =====================
+
+ITER_TAG = "recap_iter_000"
+INPUT_DATASET_DIR_REL = "agent/artifacts/recap_datasets"
+OUTPUT_DATASET_DIR_REL = "agent/artifacts/lerobot_datasets"
+
+MAX_EPISODES = 1
+TOTAL_TIMEOUT_S = 180
+
+
+def _ensure_repo_root_on_syspath(repo_root_guess: Path) -> None:
+    p = str(repo_root_guess)
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
+
+def _repo_root() -> Path:
+    mod = importlib.import_module("work.demo_utils.paths")
+    fn = getattr(mod, "repo_root")
+    return cast(Path, fn(from_path=__file__))
+
+
+def _maybe_reexec_into_wbc_venv(repo_root: Path) -> None:
+    mod = importlib.import_module("work.demo_utils.paths")
+    fn = getattr(mod, "maybe_reexec_into_wbc_venv")
+    fn(repo_root)
+
+
+@contextlib.contextmanager
+def _tee_stdio(log_path: Path, *, header: str) -> Iterator[None]:
+    mod = importlib.import_module("work.demo_utils.tee")
+    fn = getattr(mod, "tee_stdio")
+    with fn(Path(log_path), header=str(header)):
+        yield
+
+
+def _install_alarm_timeout(timeout_s: float | None) -> None:
+    if timeout_s is None:
+        return
+    try:
+        t = int(float(timeout_s))
+    except Exception:
+        return
+    if t <= 0:
+        return
+    if not hasattr(signal, "SIGALRM"):
+        return
+
+    def _handler(_signum: int, _frame: object) -> None:
+        raise TimeoutError(f"Timed out after {t}s")
+
+    signal.signal(signal.SIGALRM, _handler)
+    signal.alarm(t)
+
+
+def _clear_alarm_timeout() -> None:
+    if hasattr(signal, "SIGALRM"):
+        try:
+            signal.alarm(0)
+        except Exception:
+            pass
+
+
+def _count_jsonl_lines(path: Path) -> int:
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    n = 0
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                n += 1
+    return int(n)
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="33_recap_export_lerobot_v2_dataset.py",
+        description=(
+            "RECAP M3 exporter (M1+M2 -> GR00T-flavored LeRobot v2) with evidence logging."
+        ),
+    )
+    p.add_argument("--iter-tag", type=str, default=str(ITER_TAG))
+    p.add_argument("--max-episodes", type=int, default=int(MAX_EPISODES))
+    p.add_argument(
+        "--total-timeout-s",
+        type=float,
+        default=float(TOTAL_TIMEOUT_S),
+        help="Hard timeout fuse (best-effort) for the whole script.",
+    )
+
+    if hasattr(argparse, "BooleanOptionalAction"):
+        p.add_argument(
+            "--dual-task-text",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help="Export task_text as a deterministic mix of raw/conditioned prompts.",
+        )
+        p.add_argument(
+            "--force-restart",
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help="Delete existing LeRobot output dir for this iter_tag before export.",
+        )
+    else:
+        g = p.add_mutually_exclusive_group(required=False)
+        g.add_argument(
+            "--dual-task-text",
+            dest="dual_task_text",
+            action="store_true",
+            help="Export task_text as a deterministic mix of raw/conditioned prompts.",
+        )
+        g.add_argument(
+            "--no-dual-task-text",
+            dest="dual_task_text",
+            action="store_false",
+            help="Disable dual task_text export; use single task_text mode.",
+        )
+        p.set_defaults(dual_task_text=True)
+        h = p.add_mutually_exclusive_group(required=False)
+        h.add_argument(
+            "--force-restart",
+            dest="force_restart",
+            action="store_true",
+            help="Delete existing LeRobot output dir for this iter_tag before export.",
+        )
+        h.add_argument(
+            "--no-force-restart",
+            dest="force_restart",
+            action="store_false",
+            help="Keep existing output dir protection enabled.",
+        )
+        p.set_defaults(force_restart=False)
+    return p
+
+
+def main() -> int:
+    if any(a in ("-h", "--help") for a in sys.argv[1:]):
+        try:
+            _build_parser().parse_args()
+        except SystemExit as e:
+            return int(getattr(e, "code", 0) or 0)
+        return 0
+
+    args = _build_parser().parse_args()
+
+    repo_root_guess = Path(__file__).resolve().parents[3]
+    _ensure_repo_root_on_syspath(repo_root_guess)
+    repo_root = _repo_root()
+    _ensure_repo_root_on_syspath(repo_root)
+    _maybe_reexec_into_wbc_venv(repo_root)
+
+    iter_tag = str(getattr(args, "iter_tag", "") or ITER_TAG)
+    runtime_dir = repo_root / "agent" / "runtime_logs" / iter_tag
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    log_path = runtime_dir / "m3_export.log"
+
+    total_timeout_s = float(getattr(args, "total_timeout_s", 0.0) or 0.0)
+    max_episodes = int(getattr(args, "max_episodes", 0) or 0)
+    dual_task_text = bool(getattr(args, "dual_task_text", True))
+    force_restart = bool(getattr(args, "force_restart", False))
+    if max_episodes <= 0:
+        raise ValueError(f"max_episodes must be > 0, got {max_episodes}")
+
+    input_iter_dir_rel = str(Path(INPUT_DATASET_DIR_REL) / iter_tag)
+    output_iter_dir_rel = str(Path(OUTPUT_DATASET_DIR_REL) / iter_tag)
+    transitions_path = repo_root / input_iter_dir_rel / "transitions.jsonl"
+
+    t0_total = time.monotonic()
+    with _tee_stdio(log_path, header="33_recap_export_lerobot_v2_dataset"):
+        _install_alarm_timeout(total_timeout_s or None)
+        try:
+            print("[INFO] ts:", _dt.datetime.now().isoformat(timespec="seconds"))
+            print("[INFO] python:", sys.version.replace("\n", " "))
+            print("[INFO] sys.executable:", sys.executable)
+            print("[INFO] iter_tag:", iter_tag)
+            print("[INFO] input_iter_dir_rel:", input_iter_dir_rel)
+            print("[INFO] output_iter_dir_rel:", output_iter_dir_rel)
+            print("[INFO] runtime_dir:", str(runtime_dir))
+            print("[INFO] log_path:", str(log_path))
+            print("[INFO] dual_task_text:", bool(dual_task_text))
+            print("[INFO] force_restart:", bool(force_restart))
+
+            n_transitions = _count_jsonl_lines(transitions_path)
+            print("[EVIDENCE] input.transitions_jsonl_lines:", int(n_transitions))
+
+            exp_mod = importlib.import_module(
+                "work.recap.lerobot_export.dataset_export"
+            )
+            export_fn = getattr(exp_mod, "export_recap_to_lerobot_v2")
+
+            result: Any = export_fn(
+                iter_tag=str(iter_tag),
+                repo_root=repo_root,
+                input_recap_dataset_dir=str(input_iter_dir_rel),
+                output_dataset_dir=str(output_iter_dir_rel),
+                max_episodes=int(max_episodes),
+                dual_task_text=bool(dual_task_text),
+                overwrite_existing=bool(force_restart),
+            )
+
+            output_dataset_dir = getattr(result, "output_dataset_dir", None)
+            total_frames = int(getattr(result, "total_frames"))
+            state_dim = int(getattr(result, "state_dim"))
+            action_dim = int(getattr(result, "action_dim"))
+            total_tasks = int(getattr(result, "total_tasks"))
+
+            print(
+                "[EVIDENCE] output.total_frames:",
+                int(total_frames),
+                "(parquet rows total)",
+            )
+            print("[EVIDENCE] output.state_dim:", int(state_dim))
+            print("[EVIDENCE] output.action_dim:", int(action_dim))
+            print("[EVIDENCE] output.total_tasks:", int(total_tasks))
+            if output_dataset_dir is not None:
+                print("[EVIDENCE] output.dataset_dir:", str(output_dataset_dir))
+
+            elapsed = time.monotonic() - t0_total
+            print("[INFO] done elapsed_s:", f"{elapsed:.2f}")
+            return 0
+        except KeyboardInterrupt:
+            print("\n[INFO] KeyboardInterrupt -> stop early")
+            return 130
+        finally:
+            _clear_alarm_timeout()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

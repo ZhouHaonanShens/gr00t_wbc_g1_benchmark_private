@@ -1,0 +1,152 @@
+{
+  "artifact_kind": "gr00t_new_embodiment_modality_config",
+  "branch_tag": "NEW_EMBODIMENT",
+  "embodiment_tag": "NEW_EMBODIMENT",
+  "intended_usage": {
+    "canonical_branch_contract": true,
+    "direct_launch_finetune_compatible": false,
+    "format_mismatch_note": "Isaac-GR00T finetune expects a Python registration file for modality_config_path, while replay-side docs/server mention JSON loading. This JSON freezes the repo-local NEW_EMBODIMENT branch contract for audit and replay-side provenance; it is not a drop-in launch_finetune.py registration module.",
+    "replay_side_json_freeze": true,
+    "training_side_python_registration_required": true
+  },
+  "modalities": {
+    "action": {
+      "action_configs": [
+        {
+          "format": "DEFAULT",
+          "key": "left_arm",
+          "rep": "RELATIVE",
+          "state_key": "left_arm",
+          "type": "NON_EEF"
+        },
+        {
+          "format": "DEFAULT",
+          "key": "right_arm",
+          "rep": "RELATIVE",
+          "state_key": "right_arm",
+          "type": "NON_EEF"
+        },
+        {
+          "format": "DEFAULT",
+          "key": "left_hand",
+          "rep": "ABSOLUTE",
+          "type": "NON_EEF"
+        },
+        {
+          "format": "DEFAULT",
+          "key": "right_hand",
+          "rep": "ABSOLUTE",
+          "type": "NON_EEF"
+        },
+        {
+          "format": "DEFAULT",
+          "key": "waist",
+          "rep": "ABSOLUTE",
+          "type": "NON_EEF"
+        },
+        {
+          "format": "DEFAULT",
+          "key": "base_height_command",
+          "rep": "ABSOLUTE",
+          "type": "NON_EEF"
+        },
+        {
+          "format": "DEFAULT",
+          "key": "navigate_command",
+          "rep": "ABSOLUTE",
+          "type": "NON_EEF"
+        }
+      ],
+      "delta_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29
+      ],
+      "dims_by_key": {
+        "base_height_command": 1,
+        "left_arm": 7,
+        "left_hand": 7,
+        "navigate_command": 3,
+        "right_arm": 7,
+        "right_hand": 7,
+        "waist": 3
+      },
+      "modality_keys": [
+        "left_arm",
+        "right_arm",
+        "left_hand",
+        "right_hand",
+        "waist",
+        "base_height_command",
+        "navigate_command"
+      ]
+    },
+    "language": {
+      "delta_indices": [
+        0
+      ],
+      "modality_keys": [
+        "annotation.human.task_description"
+      ]
+    },
+    "state": {
+      "delta_indices": [
+        0
+      ],
+      "dims_by_key": {
+        "left_arm": 7,
+        "left_hand": 7,
+        "left_leg": 6,
+        "right_arm": 7,
+        "right_hand": 7,
+        "right_leg": 6,
+        "waist": 3
+      },
+      "modality_keys": [
+        "left_leg",
+        "right_leg",
+        "waist",
+        "left_arm",
+        "right_arm",
+        "left_hand",
+        "right_hand"
+      ]
+    },
+    "video": {
+      "delta_indices": [
+        0
+      ],
+      "modality_keys": [
+        "ego_view"
+      ]
+    }
+  },
+  "schema_version": "gr00t_new_embodiment_modality_config_v1"
+}
