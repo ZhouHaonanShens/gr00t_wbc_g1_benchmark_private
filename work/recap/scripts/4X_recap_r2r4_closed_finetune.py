@@ -304,8 +304,7 @@ def _build_throughput_probe_spec(
     )
     command = [
         "CUDA_VISIBLE_DEVICES=1",
-        "submodules/Isaac-GR00T/gr00t/eval/sim/GR00T-WholeBodyControl/"
-        "GR00T-WholeBodyControl_uv/.venv/bin/python",
+        ".envs/wbc/bin/python",
         "work/recap/scripts/4X_recap_r2r4_closed_finetune.py",
         "--warm-start-checkpoint",
         _as_repo_relative(repo_root, Path(config["warm_start_checkpoint"])),

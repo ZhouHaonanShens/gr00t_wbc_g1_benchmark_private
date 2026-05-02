@@ -359,7 +359,7 @@ def run(argv: Sequence[str] | None = None) -> dict[str, Any]:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifact-repo-root", default="/home/howard/Projects/gr00t_wbc_g1_benchmark")
     parser.add_argument("--timestamp", default=_utc_ts())
-    parser.add_argument("--python", default="/home/howard/Projects/gr00t_wbc_g1_benchmark/.venv/bin/python")
+    parser.add_argument("--python", default=".envs/main/bin/python")
     parser.add_argument("--p4-timeout-seconds", type=int, default=P4_TIMEOUT_SECONDS)
     parser.add_argument("--p5-timeout-seconds", type=int, default=P5_TIMEOUT_SECONDS)
     parser.add_argument("--p5-seed-start", type=int, default=P5_SEED_START)

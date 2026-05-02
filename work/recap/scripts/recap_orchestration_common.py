@@ -12,10 +12,7 @@ def repo_root(from_path: str | Path) -> Path:
 
 
 def wbc_python(repo_root_path: Path) -> Path:
-    return (
-        repo_root_path
-        / "submodules/Isaac-GR00T/gr00t/eval/sim/GR00T-WholeBodyControl/GR00T-WholeBodyControl_uv/.venv/bin/python"
-    )
+    return repo_root_path / ".envs" / "wbc" / "bin" / "python"
 
 
 def run_cmd_tee(

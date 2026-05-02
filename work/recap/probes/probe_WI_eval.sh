@@ -4,7 +4,7 @@
 set -euo pipefail
 
 REPO_ROOT="/home/howard/Projects/gr00t_wbc_g1_benchmark"
-WBC_PY="${REPO_ROOT}/submodules/Isaac-GR00T/gr00t/eval/sim/GR00T-WholeBodyControl/GR00T-WholeBodyControl_uv/.venv/bin/python"
+WBC_PY="${REPO_ROOT}/.envs/wbc/bin/python"
 
 RESCUE_ROOT="${REPO_ROOT}/agent/artifacts/probes/probe_WI_rescue"
 EVAL_ROOT="${RESCUE_ROOT}/per_alpha_eval"

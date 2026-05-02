@@ -42,10 +42,7 @@ DEFAULT_EMBODIMENT_TAG = "UNITREE_G1"
 DEFAULT_RUNTIME_LOG_DIR = "agent/runtime_logs/34b_recap_numeric_adv_smoke"
 DEFAULT_RUNTIME_LOG_PREFIX = "34b_recap_numeric_adv_smoke"
 DEFAULT_PATCHED_OUT_ROOT = "agent/artifacts/hf_patches"
-DEFAULT_UPSTREAM_PY_REL = (
-    "submodules/Isaac-GR00T/gr00t/eval/sim/GR00T-WholeBodyControl/"
-    "GR00T-WholeBodyControl_uv/.venv/bin/python"
-)
+DEFAULT_UPSTREAM_PY_REL = ".envs/wbc/bin/python"
 DEFAULT_MAX_STEPS = 10
 DEFAULT_SAVE_STEPS = 10
 DEFAULT_SAVE_TOTAL_LIMIT = 1

@@ -18,10 +18,7 @@ from work.recap.finetune_full import resolve_full_update_authority_output_dir
 
 DEFAULT_BASE_MODEL = "nvidia/GR00T-N1.6-G1-PnPAppleToPlate"
 DEFAULT_UPSTREAM_SCRIPT_REL = "work/recap/launch_finetune_use_ddp.py"
-DEFAULT_WBC_PY_REL = (
-    "submodules/Isaac-GR00T/gr00t/eval/sim/GR00T-WholeBodyControl/"
-    "GR00T-WholeBodyControl_uv/.venv/bin/python"
-)
+DEFAULT_WBC_PY_REL = ".envs/wbc/bin/python"
 LIVE_LAUNCH_FAMILY = "single_gpu_v1"
 HISTORICAL_DDP_LAUNCH_FAMILY = "task10_2gpu_ddp_diagnostic_v1"
 DEFAULT_FORMAL_OUTPUT_DIR_REL = "agent/artifacts/stage3_t3b_baseline_1gpu/formal_run"

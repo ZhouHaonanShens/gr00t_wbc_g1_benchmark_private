@@ -19,7 +19,7 @@ if [[ -v RUNTIME_LOGS_REL ]]; then
 fi
 
 : "${ITER_TAG:=recap_iter_000}"
-: "${WBC_PY_REL:=submodules/Isaac-GR00T/gr00t/eval/sim/GR00T-WholeBodyControl/GR00T-WholeBodyControl_uv/.venv/bin/python}"
+: "${WBC_PY_REL:=.envs/wbc/bin/python}"
 : "${DATASET_DIR_REL:=agent/artifacts/lerobot_datasets/${ITER_TAG}}"
 : "${RUNTIME_LOGS_REL:=agent/runtime_logs/${ITER_TAG}}"
 : "${TOTAL_TIMEOUT_S:=120}"

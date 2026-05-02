@@ -32,11 +32,8 @@ _ = os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
 
 
 DEFAULT_MAIN_REPO_ROOT = str(Path(__file__).resolve().parents[3])
-DEFAULT_MAIN_REPO_PYTHON = (
-    f"{DEFAULT_MAIN_REPO_ROOT}/submodules/Isaac-GR00T/"
-    "gr00t/eval/sim/GR00T-WholeBodyControl/GR00T-WholeBodyControl_uv/.venv/bin/python"
-)
-DEFAULT_MAIN_REPO_SITE_PACKAGES_PYTHON = f"{DEFAULT_MAIN_REPO_ROOT}/.venv/bin/python"
+DEFAULT_MAIN_REPO_PYTHON = f"{DEFAULT_MAIN_REPO_ROOT}/.envs/wbc/bin/python"
+DEFAULT_MAIN_REPO_SITE_PACKAGES_PYTHON = f"{DEFAULT_MAIN_REPO_ROOT}/.envs/main/bin/python"
 DEFAULT_UPSTREAM_SCRIPT = (
     f"{DEFAULT_MAIN_REPO_ROOT}/work/recap/scripts/3D_recap_finetune_full.py"
 )
@@ -571,11 +568,11 @@ def _resolve_effective_dataset_path(
 
 def _site_packages_path(main_repo_root: Path) -> Path:
     candidates = sorted(
-        (main_repo_root / ".venv" / "lib").glob("python*/site-packages")
+        (main_repo_root / ".envs" / "main" / "lib").glob("python*/site-packages")
     )
     if not candidates:
         raise FileNotFoundError(
-            f"Could not locate main-repo site-packages under {main_repo_root / '.venv' / 'lib'}"
+            f"Could not locate main-repo site-packages under {main_repo_root / '.envs' / 'main' / 'lib'}"
         )
     return candidates[-1]
 

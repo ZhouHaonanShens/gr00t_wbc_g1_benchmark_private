@@ -134,10 +134,7 @@ def ensure_demo_live_dirs(
 
 
 def wbc_venv_python(repo_root: Path) -> Path:
-    return (
-        repo_root
-        / "submodules/Isaac-GR00T/gr00t/eval/sim/GR00T-WholeBodyControl/GR00T-WholeBodyControl_uv/.venv/bin/python"
-    )
+    return repo_root / ".envs" / "wbc" / "bin" / "python"
 
 
 def wbc_checkout_pythonpath(repo_root: Path) -> list[str]:

@@ -15,6 +15,16 @@
 - **agent 不能直接 `sudo`**：必须生成 `agent/run/<topic>_sudo.sh` 交用户手动执行（流程见 L1）。
 - **`/tmp` 不是长期存储**：写到 /tmp 的视频/大文件必须当次复制到 `agent/artifacts/`。
 - **`submodules/**` 视为只读**；必要修改前先在协作日志说明。
+- **Python venv 入口**：`.envs/{main,wbc,openpi}` 是仓库内 Python venv 的唯一权威入口；agent 不得绕过去手推 `submodules/.../venv`。
+  - 三个入口对应：
+
+    | alias        | target                                                                              | python   | 用途                |
+    |--------------|-------------------------------------------------------------------------------------|----------|---------------------|
+    | `.envs/main`   | submodules/Isaac-GR00T/.venv                                                        | 3.10.19  | GR00T 主包          |
+    | `.envs/wbc`    | submodules/Isaac-GR00T/gr00t/eval/sim/GR00T-WholeBodyControl/GR00T-WholeBodyControl_uv/.venv | 3.10.19  | MuJoCo + WBC 仿真   |
+    | `.envs/openpi` | submodules/openpi/.venv                                                             | 3.11.14  | OpenPI / RECAP      |
+  - `.envs/` 不进 git；fresh clone / 新 worktree（含 `git worktree add`）后必须独立跑 `bash agent/run/setup_envs.sh`。
+  - 任何 `git submodule update` 或 submodule 内 `uv sync` 之后必须重跑 setup 脚本，symlink 可能已失效。
 - **长任务必须带 `timeout` 保险丝**；关键依赖失败必须当步停下。
 - **L0 漂移自检**：`bash agent/run/check_l0_drift.sh`（探针实际值 vs L0 声明值，仅警告不阻塞）。
 

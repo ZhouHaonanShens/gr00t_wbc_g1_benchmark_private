@@ -20,10 +20,7 @@ from work.demo_utils import paths as demo_paths
 from work.recap import gr00t_main_recap
 
 
-DEFAULT_WBC_PY_REL = (
-    "submodules/Isaac-GR00T/gr00t/eval/sim/GR00T-WholeBodyControl/"
-    "GR00T-WholeBodyControl_uv/.venv/bin/python"
-)
+DEFAULT_WBC_PY_REL = ".envs/wbc/bin/python"
 DEFAULT_VISIBLE_DEVICE = "1"
 DEFAULT_INDICATOR_DROPOUT_P = 0.3
 DEFAULT_TRAIN_SCOPE = "strict_full"

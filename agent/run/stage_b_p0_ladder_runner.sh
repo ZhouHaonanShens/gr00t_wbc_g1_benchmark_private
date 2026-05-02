@@ -4,7 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${REPO_ROOT}"
 
-WBC_PY="submodules/Isaac-GR00T/gr00t/eval/sim/GR00T-WholeBodyControl/GR00T-WholeBodyControl_uv/.venv/bin/python"
+WBC_PY=".envs/wbc/bin/python"
 LOG_DIR="agent/runtime_logs/p0_ladder_phase0"
 mkdir -p "${LOG_DIR}"
 LOG_FILE="${LOG_DIR}/stage_b_p0_ladder_runner_$(date -u +%Y%m%dT%H%M%SZ).log"

@@ -44,7 +44,7 @@ OUT_DIR="agent/artifacts/checkpoints/${ITER_TAG}/finetune_full_diffusion_smoke"
 mkdir -p "$OUT_DIR"
 SELECTED_CHECKPOINT_PATH=""
 
-WBC_PY_DEFAULT="submodules/Isaac-GR00T/gr00t/eval/sim/GR00T-WholeBodyControl/GR00T-WholeBodyControl_uv/.venv/bin/python"
+WBC_PY_DEFAULT=".envs/wbc/bin/python"
 WBC_PY="${WBC_PY:-$WBC_PY_DEFAULT}"
 
 {

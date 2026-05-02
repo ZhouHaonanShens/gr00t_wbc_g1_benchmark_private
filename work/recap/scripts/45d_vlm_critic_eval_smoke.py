@@ -35,7 +35,7 @@ _ = os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
 
 
 DEFAULT_MAIN_REPO_ROOT = str(Path(__file__).resolve().parents[3])
-DEFAULT_MAIN_REPO_PYTHON = f"{DEFAULT_MAIN_REPO_ROOT}/.venv/bin/python"
+DEFAULT_MAIN_REPO_PYTHON = f"{DEFAULT_MAIN_REPO_ROOT}/.envs/main/bin/python"
 DEFAULT_SERVER_SCRIPT = (
     f"{DEFAULT_MAIN_REPO_ROOT}/work/recap/scripts/3D_recap_run_adv_server.py"
 )
@@ -163,11 +163,11 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 def _site_packages_path(main_repo_root: Path) -> Path:
     candidates = sorted(
-        (main_repo_root / ".venv" / "lib").glob("python*/site-packages")
+        (main_repo_root / ".envs" / "main" / "lib").glob("python*/site-packages")
     )
     if not candidates:
         raise FileNotFoundError(
-            f"Could not locate main-repo site-packages under {main_repo_root / '.venv' / 'lib'}"
+            f"Could not locate main-repo site-packages under {main_repo_root / '.envs' / 'main' / 'lib'}"
         )
     return candidates[-1]
 

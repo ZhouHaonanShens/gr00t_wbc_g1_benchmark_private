@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-PYTHON_BIN="${REPO_ROOT}/.venv/bin/python"
+PYTHON_BIN="${REPO_ROOT}/.envs/main/bin/python"
 if [[ ! -x "${PYTHON_BIN}" ]]; then
   PYTHON_BIN="$(command -v python3)"
 fi

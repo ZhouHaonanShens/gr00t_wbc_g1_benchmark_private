@@ -23,7 +23,7 @@ OUT_DIR="agent/artifacts/checkpoints/${ITER_TAG}/finetune_full_diffusion_002"
 DATASET_DIR="${DATASET_DIR_REL}/${ITER_TAG}"
 mkdir -p "$LOG_DIR" "$OUT_DIR"
 
-WBC_PY_DEFAULT="submodules/Isaac-GR00T/gr00t/eval/sim/GR00T-WholeBodyControl/GR00T-WholeBodyControl_uv/.venv/bin/python"
+WBC_PY_DEFAULT=".envs/wbc/bin/python"
 WBC_PY="${WBC_PY:-$WBC_PY_DEFAULT}"
 
 LOG_SYS="$LOG_DIR/40_pretrain_system_probe.log"

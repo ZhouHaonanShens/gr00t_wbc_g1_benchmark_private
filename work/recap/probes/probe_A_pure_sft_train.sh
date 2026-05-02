@@ -8,7 +8,7 @@ set -euo pipefail
 
 # ---- Pinned absolute paths (no /media/ substring permitted in any command line) ----
 REPO_ROOT="/home/howard/Projects/gr00t_wbc_g1_benchmark"
-VENV_PY="${REPO_ROOT}/submodules/Isaac-GR00T/gr00t/eval/sim/GR00T-WholeBodyControl/GR00T-WholeBodyControl_uv/.venv/bin/python"
+VENV_PY="${REPO_ROOT}/.envs/wbc/bin/python"
 WRAPPER="${REPO_ROOT}/work/recap/scripts/34b_recap_numeric_adv_smoke.py"
 
 DATASET_REL="agent/artifacts/lerobot_datasets/recap_stage3_iter_002"

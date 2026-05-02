@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-PY="${REPO_ROOT}/submodules/Isaac-GR00T/gr00t/eval/sim/GR00T-WholeBodyControl/GR00T-WholeBodyControl_uv/.venv/bin/python"
+PY="${REPO_ROOT}/.envs/wbc/bin/python"
 
 timeout 10s "${PY}" - <<'PY' >/dev/null 2>&1 || true
 from gr00t.policy.server_client import PolicyClient

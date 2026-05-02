@@ -900,19 +900,7 @@ def _build_live_pythonpath(repo_root: Path) -> list[str]:
 
 
 def _preferred_live_python(repo_root: Path) -> str:
-    candidate = (
-        repo_root
-        / "submodules"
-        / "Isaac-GR00T"
-        / "gr00t"
-        / "eval"
-        / "sim"
-        / "GR00T-WholeBodyControl"
-        / "GR00T-WholeBodyControl_uv"
-        / ".venv"
-        / "bin"
-        / "python"
-    )
+    candidate = repo_root / ".envs" / "wbc" / "bin" / "python"
     if candidate.is_file():
         return str(candidate)
     return str(sys.executable)

@@ -537,7 +537,7 @@ def _emit_t9_evidence(
 ) -> None:
     evidence_root = _resolve_path(repo_root, EVIDENCE_DIR_REL)
     public_cmd = (
-        ".venv/bin/python work/recap/scripts/45_recap_label_dataset_vlm_backend.py "
+        ".envs/main/bin/python work/recap/scripts/45_recap_label_dataset_vlm_backend.py "
         f"--iter-tag {iter_tag} --value-source critic --critic-dir {critic_dir}"
     )
     fullsize_text = "\n".join(

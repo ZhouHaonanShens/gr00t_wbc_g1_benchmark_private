@@ -638,7 +638,7 @@ def build_readme_markdown(report_data: Mapping[str, Any]) -> str:
         f"- `{_safe_relpath(bundle.p5_verdict_path)}`: P5 gate verdict authority\n\n"
         "## 重新生成\n\n"
         "```bash\n"
-        ".venv/bin/python work/recap/scripts/35b_full_update_report.py \\\n"
+        ".envs/main/bin/python work/recap/scripts/35b_full_update_report.py \\\n"
         f"  --v2-authority-root {_safe_relpath(bundle.v2_authority_root)} \\\n"
         f"  --output-dir {_safe_relpath(bundle.v2_authority_root)}\n"
         "```\n"

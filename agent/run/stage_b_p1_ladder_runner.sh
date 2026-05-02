@@ -6,7 +6,7 @@ cd "${REPO_ROOT}"
 
 SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 readonly SCRIPT_NAME
-readonly WBC_PY_DEFAULT="submodules/Isaac-GR00T/gr00t/eval/sim/GR00T-WholeBodyControl/GR00T-WholeBodyControl_uv/.venv/bin/python"
+readonly WBC_PY_DEFAULT=".envs/wbc/bin/python"
 readonly STAGE_B_DIR_DEFAULT="agent/artifacts/stage_B_controller_seam_20260501T045341Z_precheck_gate"
 readonly P0_REL="prechecks/P0_eval_protocol_determinism"
 readonly BASE_MODEL_DEFAULT="nvidia/GR00T-N1.6-G1-PnPAppleToPlate"
