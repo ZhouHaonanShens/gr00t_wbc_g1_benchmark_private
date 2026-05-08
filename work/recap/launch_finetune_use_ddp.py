@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import functools
+import hashlib
 import inspect
 import json
 import math
@@ -27,6 +28,10 @@ FIRST_BACKWARD_GRAD_PROBE_FILENAME = "first_backward_grad_probe_rank0.json"
 FIRST_OPTIMIZER_STEP_PARAM_DELTA_FILENAME = (
     "first_optimizer_step_param_delta_rank0.json"
 )
+NORMALIZATION_STATS_HASH_JSONL_FILENAME = (
+    "normalization_stats_hash_per_batch_rank0.jsonl"
+)
+NORMALIZATION_STATS_HASH_SUMMARY_FILENAME = "normalization_stats_hash_summary_rank0.json"
 REPO_LOCAL_CENSUS_PREVIEW_LIMIT = 32
 REPO_LOCAL_TRAINABILITY_AUTHORITY_FIELD = "repo_local_trainability_authority"
 REPO_LOCAL_TRAINABILITY_AUTHORITY_SCHEMA_VERSION = (
@@ -74,6 +79,9 @@ REPO_LOCAL_CENSUS_HOOK_STATE: dict[str, Any] = {
     "original_trainer_training_step": None,
     "original_trainer_create_optimizer": None,
     "original_trainer_train": None,
+    "stats_hash_batch_index": 0,
+    "stats_hash_last_payload": None,
+    "stats_hash_jsonl_path": None,
 }
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -150,6 +158,46 @@ def _append_jsonl_atomic(path: Path, payload: Mapping[str, Any]) -> Path:
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(dict(payload), ensure_ascii=True, sort_keys=True) + "\n")
     return path
+
+
+def _json_safe_for_hash(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            str(key): _json_safe_for_hash(item)
+            for key, item in sorted(value.items(), key=lambda kv: str(kv[0]))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_for_hash(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+
+    tolist = getattr(value, "tolist", None)
+    if callable(tolist):
+        try:
+            return _json_safe_for_hash(tolist())
+        except Exception:
+            pass
+
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            return _json_safe_for_hash(item())
+        except Exception:
+            pass
+
+    return repr(value)
+
+
+def _stable_stats_sha256(payload: Any) -> str | None:
+    if payload is None:
+        return None
+    canonical = json.dumps(
+        _json_safe_for_hash(payload),
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def resolve_repo_local_metadata_dir_for_output_dir(output_dir: str | Path) -> Path:
@@ -1042,6 +1090,140 @@ def _repo_local_rank0_metadata_path(filename: str) -> Path:
     if metadata_dir is None:
         raise RuntimeError("repo-local census hook state is not initialized")
     return Path(metadata_dir) / filename
+
+
+def _stats_hash_payload_for_trainer(*, trainer: Any, model: Any) -> dict[str, Any]:
+    train_dataset = getattr(trainer, "train_dataset", None)
+    processor = getattr(train_dataset, "processor", None)
+    processor_statistics = getattr(processor, "statistics", None)
+    processor_norm_params = getattr(processor, "norm_params", None)
+    train_dataset_global_stats = getattr(train_dataset, "global_stats", None)
+    if train_dataset_global_stats is None and hasattr(train_dataset, "get_dataset_statistics"):
+        try:
+            train_dataset_global_stats = train_dataset.get_dataset_statistics()
+        except Exception as exc:
+            train_dataset_global_stats = {
+                "unavailable_reason": _safe_exception_reason(exc),
+            }
+
+    state = REPO_LOCAL_CENSUS_HOOK_STATE
+    batch_index = int(state.get("stats_hash_batch_index", 0) or 0) + 1
+    state["stats_hash_batch_index"] = batch_index
+
+    global_step = getattr(trainer, "state", None)
+    global_step_value = getattr(global_step, "global_step", None)
+    try:
+        global_step_int = int(global_step_value)
+    except Exception:
+        global_step_int = None
+
+    payload = {
+        "schema_version": "repo_local_normalization_stats_hash_per_batch_v1",
+        "event": "before_compute_loss",
+        "batch_index": batch_index,
+        "trainer_global_step": global_step_int,
+        "rank": _env_int("RANK", default=0),
+        "local_rank": _env_int("LOCAL_RANK", default=0),
+        "world_size": _env_int("WORLD_SIZE", default=0),
+        "train_dataset_type": (
+            None
+            if train_dataset is None
+            else f"{type(train_dataset).__module__}.{type(train_dataset).__qualname__}"
+        ),
+        "processor_type": (
+            None
+            if processor is None
+            else f"{type(processor).__module__}.{type(processor).__qualname__}"
+        ),
+        "model_type": (
+            None if model is None else f"{type(model).__module__}.{type(model).__qualname__}"
+        ),
+        "override_pretraining_statistics": getattr(
+            train_dataset,
+            "override_pretraining_statistics",
+            None,
+        ),
+        "processor_statistics_sha256": _stable_stats_sha256(processor_statistics),
+        "processor_norm_params_sha256": _stable_stats_sha256(processor_norm_params),
+        "train_dataset_global_stats_sha256": _stable_stats_sha256(
+            train_dataset_global_stats
+        ),
+        "processor_statistics_embodiments": (
+            []
+            if not isinstance(processor_statistics, Mapping)
+            else sorted(str(key) for key in processor_statistics.keys())
+        ),
+        "train_dataset_global_stats_embodiments": (
+            []
+            if not isinstance(train_dataset_global_stats, Mapping)
+            else sorted(str(key) for key in train_dataset_global_stats.keys())
+        ),
+        "actual_normalization_authority": (
+            "processor.statistics_and_norm_params"
+            if processor_statistics is not None and processor_norm_params is not None
+            else "unavailable"
+        ),
+    }
+    payload["processor_stats_match_train_dataset_global_stats"] = (
+        payload["processor_statistics_sha256"]
+        == payload["train_dataset_global_stats_sha256"]
+    )
+    state["stats_hash_last_payload"] = payload
+    return payload
+
+
+def _write_rank0_normalization_stats_hash_event(
+    *,
+    trainer: Any,
+    model: Any,
+) -> Path | None:
+    if not _is_repo_local_rank0():
+        return None
+    try:
+        event = _stats_hash_payload_for_trainer(trainer=trainer, model=model)
+        path = _repo_local_rank0_metadata_path(NORMALIZATION_STATS_HASH_JSONL_FILENAME)
+        _append_jsonl_atomic(path, event)
+        REPO_LOCAL_CENSUS_HOOK_STATE["stats_hash_jsonl_path"] = path
+        print(
+            "[INFO] repo_local_normalization_stats_hash "
+            f"batch_index={event['batch_index']} "
+            f"global_step={event['trainer_global_step']} "
+            f"processor_statistics_sha256={event['processor_statistics_sha256']} "
+            f"norm_params_sha256={event['processor_norm_params_sha256']} "
+            f"dataset_global_stats_sha256={event['train_dataset_global_stats_sha256']} "
+            f"jsonl={path}",
+            flush=True,
+        )
+        return path
+    except Exception as exc:
+        reason = _safe_exception_reason(exc)
+        print(f"[WARN] repo_local_normalization_stats_hash_failed={reason}", flush=True)
+        return None
+
+
+def _write_rank0_normalization_stats_hash_summary() -> Path | None:
+    if not _is_repo_local_rank0():
+        return None
+    last_payload = REPO_LOCAL_CENSUS_HOOK_STATE.get("stats_hash_last_payload")
+    jsonl_path = REPO_LOCAL_CENSUS_HOOK_STATE.get("stats_hash_jsonl_path")
+    if not isinstance(last_payload, Mapping):
+        return None
+    payload = {
+        "schema_version": "repo_local_normalization_stats_hash_summary_v1",
+        "artifact_kind": "normalization_stats_hash_summary",
+        "per_batch_jsonl": str(jsonl_path) if jsonl_path is not None else None,
+        "batch_records_emitted": int(
+            REPO_LOCAL_CENSUS_HOOK_STATE.get("stats_hash_batch_index", 0) or 0
+        ),
+        "last_batch": dict(last_payload),
+        "contract_note": (
+            "Hashes are emitted immediately before Gr00tTrainer.compute_loss; "
+            "processor.statistics and processor.norm_params are the repo-local "
+            "authority for state/action normalization in this training path."
+        ),
+    }
+    path = _repo_local_rank0_metadata_path(NORMALIZATION_STATS_HASH_SUMMARY_FILENAME)
+    return _write_json_atomic(path, payload)
 
 
 def _safe_subprocess_capture(command: list[str]) -> dict[str, Any]:
@@ -2463,6 +2645,9 @@ def install_repo_local_rank_census_hooks(*, config: Any, torch_module: Any) -> N
     REPO_LOCAL_CENSUS_HOOK_STATE["first_backward_written"] = False
     REPO_LOCAL_CENSUS_HOOK_STATE["first_optimizer_step_written"] = False
     REPO_LOCAL_CENSUS_HOOK_STATE["first_optimizer_step_pending_snapshot"] = None
+    REPO_LOCAL_CENSUS_HOOK_STATE["stats_hash_batch_index"] = 0
+    REPO_LOCAL_CENSUS_HOOK_STATE["stats_hash_last_payload"] = None
+    REPO_LOCAL_CENSUS_HOOK_STATE["stats_hash_jsonl_path"] = None
 
     from gr00t.experiment.trainer import Gr00tTrainer  # pyright: ignore[reportMissingImports]
     from gr00t.model.gr00t_n1d6.setup import (  # pyright: ignore[reportMissingImports]
@@ -2489,6 +2674,7 @@ def install_repo_local_rank_census_hooks(*, config: Any, torch_module: Any) -> N
 
         @functools.wraps(original_trainer_compute_loss)
         def repo_local_compute_loss(self: Any, model: Any, *args: Any, **kwargs: Any) -> Any:
+            _write_rank0_normalization_stats_hash_event(trainer=self, model=model)
             if not bool(REPO_LOCAL_CENSUS_HOOK_STATE["pre_forward_written"]):
                 census_path = _write_before_first_forward_census(model=model)
                 REPO_LOCAL_CENSUS_HOOK_STATE["pre_forward_written"] = True
@@ -2577,6 +2763,12 @@ def install_repo_local_rank_census_hooks(*, config: Any, torch_module: Any) -> N
                     print(
                         "[INFO] repo_local_first_optimizer_step_param_delta_probe_path="
                         f"{first_step_probe_path}"
+                    )
+                stats_hash_summary_path = _write_rank0_normalization_stats_hash_summary()
+                if stats_hash_summary_path is not None:
+                    print(
+                        "[INFO] repo_local_normalization_stats_hash_summary_path="
+                        f"{stats_hash_summary_path}"
                     )
                 optimizer_state_path = _write_rank0_optimizer_state_snapshot(trainer=self)
                 if optimizer_state_path is not None:

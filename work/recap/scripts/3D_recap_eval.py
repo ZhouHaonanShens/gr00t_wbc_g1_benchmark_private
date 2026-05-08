@@ -29,6 +29,7 @@ from work.recap.advantage import (
     NUMERIC_ADVANTAGE_EVAL_DIAGNOSTIC_ROUTE,
     build_diagnostic_surface_metadata,
 )
+from work.recap.identity import validate_preflight_report_for_entrypoint
 
 
 sys.dont_write_bytecode = True
@@ -189,6 +190,20 @@ def _build_parser() -> argparse.ArgumentParser:
         default="",
         help="Optional summary JSON output path. If empty, write to agent/artifacts.",
     )
+    p.add_argument(
+        "--canonical-preflight-report",
+        type=str,
+        default="",
+        help=(
+            "Required Phase-1 canonical identity STRICT_PROMOTION PASS report. "
+            "Eval fails before server/env startup when missing or non-PASS."
+        ),
+    )
+    p.add_argument(
+        "--preflight-only",
+        action="store_true",
+        help="Validate --canonical-preflight-report and exit before server/env startup.",
+    )
     p.add_argument("--connect-timeout-s", type=float, default=DEFAULT_CONNECT_TIMEOUT_S)
     p.add_argument("--total-timeout-s", type=float, default=DEFAULT_TOTAL_TIMEOUT_S)
     p.add_argument(
@@ -242,6 +257,15 @@ def _validate_args(args: argparse.Namespace) -> None:
         )
     if float(args.total_timeout_s) <= 0.0:
         raise ValueError(f"--total-timeout-s must be > 0, got {args.total_timeout_s}")
+
+
+def _require_canonical_preflight_report(raw_report: str) -> Mapping[str, Any]:
+    report_text = str(raw_report or "").strip()
+    if not report_text:
+        raise ValueError(
+            "--canonical-preflight-report is required before GR00T eval/server initialization"
+        )
+    return validate_preflight_report_for_entrypoint(Path(report_text), require_strict=True)
 
 
 def _append_purity_blocker(blockers: list[str], key: str, detail: str) -> None:
@@ -674,14 +698,26 @@ def _summarize_action_chunk(action: dict[str, Any]) -> dict[str, Any]:
     summary: dict[str, Any] = {}
     for key, value in action.items():
         arr = np.asarray(value, dtype=np.float32)
-        flat = np.abs(arr.reshape(-1)) if int(arr.size) > 0 else np.asarray([])
+        signed_flat = arr.reshape(-1) if int(arr.size) > 0 else np.asarray([])
+        flat = np.abs(signed_flat) if int(arr.size) > 0 else np.asarray([])
         preview = flat[: min(6, int(flat.size))].tolist() if int(flat.size) > 0 else []
+        signed_preview = (
+            signed_flat[: min(6, int(signed_flat.size))].tolist()
+            if int(signed_flat.size) > 0
+            else []
+        )
         summary[str(key)] = {
             "shape": [int(x) for x in arr.shape],
+            "mean": float(np.mean(signed_flat)) if int(signed_flat.size) > 0 else 0.0,
+            "sum": float(np.sum(signed_flat)) if int(signed_flat.size) > 0 else 0.0,
+            "l2": float(np.linalg.norm(signed_flat)) if int(signed_flat.size) > 0 else 0.0,
             "mean_abs": float(np.mean(flat)) if int(flat.size) > 0 else 0.0,
+            "sum_abs": float(np.sum(flat)) if int(flat.size) > 0 else 0.0,
             "max_abs": float(np.max(flat)) if int(flat.size) > 0 else 0.0,
             "p95_abs": float(np.quantile(flat, 0.95)) if int(flat.size) > 0 else 0.0,
+            "q99_abs": float(np.quantile(flat, 0.99)) if int(flat.size) > 0 else 0.0,
             "abs_preview": [float(v) for v in preview],
+            "signed_preview": [float(v) for v in signed_preview],
         }
     return summary
 
@@ -1277,6 +1313,21 @@ def main() -> int:
 
     args = _build_parser().parse_args()
     _validate_args(args)
+    canonical_preflight = _require_canonical_preflight_report(
+        str(args.canonical_preflight_report)
+    )
+    if bool(args.preflight_only):
+        print(
+            json.dumps(
+                {
+                    "status": "preflight_pass",
+                    "canonical_preflight_report": str(args.canonical_preflight_report),
+                    "canonical_preflight_reason_code": canonical_preflight.get("reason_code"),
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
 
     repo_root = _repo_root()
     _add_import_roots(repo_root)
@@ -1338,6 +1389,12 @@ def main() -> int:
             print("[INFO] n_episodes:", int(args.n_episodes))
             print("[INFO] max_episode_steps:", int(args.max_episode_steps))
             print("[INFO] runtime_log:", log_path)
+            print(
+                "[INFO] canonical_preflight_report:",
+                str(args.canonical_preflight_report),
+                "reason_code:",
+                canonical_preflight.get("reason_code"),
+            )
             print("[INFO] save_telemetry:", bool(telemetry_enabled))
             if telemetry_enabled:
                 print("[INFO] telemetry_dir:", telemetry_dir)
@@ -1809,6 +1866,8 @@ def main() -> int:
             else None,
             "n_action_steps_source": n_action_steps_source,
             "seed_base": int(args.seed_base),
+            "canonical_preflight_report": str(args.canonical_preflight_report),
+            "canonical_preflight_reason_code": canonical_preflight.get("reason_code"),
             "episode_results": episode_results,
             "telemetry_enabled": bool(telemetry_enabled),
             "step_telemetry_jsonl": str(step_telemetry_path)

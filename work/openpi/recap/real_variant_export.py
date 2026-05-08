@@ -13,7 +13,14 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 from typing import Any
+
+from work.openpi.recap.real_variant_policy_contract import (
+    NORM_STATS_RELATIVE_PATH,
+    attach_real_variant_policy_contract,
+    build_real_variant_policy_contract,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -60,6 +67,38 @@ SUBPROCESS_CACHE_ROOT_ENV = "OPENPI_VARIANT_SUBPROCESS_CACHE_ROOT"
 LOSS_DECOMPOSITION_REAL_SCHEMA_VERSION = "v22_variant_loss_decomposition_real_v1"
 THRESHOLD_TRACE_REAL_SCHEMA_VERSION = "v22_variant_threshold_switch_trace_real_v1"
 ALPHA_TRACE_REAL_SCHEMA_VERSION = "v22_variant_alpha_dual_loss_trace_real_v1"
+
+
+def _prioritize_upstream_openpi_imports() -> None:
+    """Ensure upstream Physical-Intelligence ``openpi`` wins over ``work/openpi``.
+
+    This module is part of the repo-local ``work.openpi`` package. Importing it can
+    place ``<repo>/work`` ahead of the upstream OpenPI source tree on ``sys.path``;
+    then OpenPI's own ``scripts/train.py`` resolves ``import openpi`` to
+    ``work/openpi`` instead of ``submodules/openpi/src/openpi``. The failure is
+    silent until the train script imports e.g. ``openpi.models``. Before loading
+    upstream train.py, pin the upstream src/client paths to the front and evict only
+    the shadowed top-level ``openpi`` modules from ``sys.modules``.
+    """
+
+    desired_paths = [str(OPENPI_SRC), str(OPENPI_CLIENT_SRC)]
+    for path in reversed(desired_paths):
+        while path in sys.path:
+            sys.path.remove(path)
+        sys.path.insert(0, path)
+
+    work_openpi_root = (REPO_ROOT / "work" / "openpi").resolve()
+    for module_name, module in list(sys.modules.items()):
+        if module_name != "openpi" and not module_name.startswith("openpi."):
+            continue
+        module_file = getattr(module, "__file__", None)
+        if module_file is None:
+            continue
+        try:
+            Path(module_file).resolve().relative_to(work_openpi_root)
+        except ValueError:
+            continue
+        del sys.modules[module_name]
 
 
 @dataclass(frozen=True)
@@ -1260,6 +1299,21 @@ def _materialize_tree_with_hardlinks_or_copy(src: Path, dst: Path) -> None:
         _copytree(src, dst)
 
 
+def _real_variant_transform_kwargs(train_config) -> dict[str, str | None]:
+    data_factory = getattr(train_config, "data", None)
+    data_transforms = getattr(data_factory, "data_transforms", None)
+    keywords = getattr(data_transforms, "keywords", {}) or {}
+    if "consumer_mode" not in keywords:
+        raise RuntimeError(
+            "real_variant_transform_contract_missing_consumer_mode:"
+            f"{getattr(train_config, 'name', '<unknown_config>')}"
+        )
+    return {
+        "consumer_mode": str(keywords["consumer_mode"]),
+        "fixed_indicator_mode": keywords.get("fixed_indicator_mode"),
+    }
+
+
 def _export_latest_checkpoint(train_config, export_dir: Path) -> None:
     checkpoint_run_dir = train_config.checkpoint_dir
     step_dirs = sorted(
@@ -1300,10 +1354,17 @@ def _export_latest_checkpoint(train_config, export_dir: Path) -> None:
     _ensure_real_export_layout(latest_step_dir)
     _copytree(params_dir, export_dir / "params")
     _copytree(assets_dir, export_dir / LIBERO_ASSET_SUBDIR)
-    _write_json(
-        export_dir / "export_manifest.json",
+    transform_kwargs = _real_variant_transform_kwargs(train_config)
+    policy_contract = build_real_variant_policy_contract(
+        base_train_config_name=str(train_config.name),
+        exp_name=str(train_config.exp_name),
+        consumer_mode=str(transform_kwargs["consumer_mode"]),
+        fixed_indicator_mode=transform_kwargs["fixed_indicator_mode"],
+        norm_stats_json_path=export_dir / NORM_STATS_RELATIVE_PATH,
+    )
+    manifest = attach_real_variant_policy_contract(
         {
-            "schema_version": "openpi_real_variant_export_v1",
+            "schema_version": "openpi_real_variant_export_v2",
             "source_checkpoint_dir": str(latest_step_dir),
             "export_dir": str(export_dir),
             "artifact_mirror_mode": "directory_copy",
@@ -1316,7 +1377,9 @@ def _export_latest_checkpoint(train_config, export_dir: Path) -> None:
             "save_interval": int(train_config.save_interval),
             "save_interval_source": save_interval_source,
         },
+        policy_contract=policy_contract,
     )
+    _write_json(export_dir / "export_manifest.json", manifest)
 
 
 def _latest_checkpoint_step_dir(checkpoint_dir: Path) -> Path | None:
@@ -1420,6 +1483,7 @@ def _install_resume_bootstrap_step_hook(train_main_mod: Any, *, resume_step: int
 def _run_internal_export(args: argparse.Namespace) -> int:
     import importlib.util
 
+    _prioritize_upstream_openpi_imports()
     train_script_path = OPENPI_ROOT / "scripts" / "train.py"
     spec = importlib.util.spec_from_file_location(
         "openpi_train_script", train_script_path
