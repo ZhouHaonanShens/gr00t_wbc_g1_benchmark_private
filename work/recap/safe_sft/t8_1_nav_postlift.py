@@ -61,6 +61,11 @@ ALLOWED_FINAL = {
     "GUARDED_RECAP_STILL_FORBIDDEN",
 }
 
+MIN_MATERIAL_EPISODES = 10
+MATERIAL_REACHED_DELTA = 2
+MATERIAL_SUCCESS_DELTA = 1
+MATERIAL_LIFTED_DELTA = 2
+
 
 def import_script_module(name: str, path: Path) -> Any:
     spec = importlib.util.spec_from_file_location(name, path)
@@ -289,6 +294,119 @@ def summarize_eval_rows(rows: list[dict[str, Any]], policy_id: str, policy: str)
         "lifted": int(sum(bool(row["lifted"]) for row in rows)),
         "failure_modes": failures,
     }
+
+
+def material_threshold_spec() -> dict[str, int]:
+    return {
+        "min_episodes_per_arm": MIN_MATERIAL_EPISODES,
+        "reached_delta": MATERIAL_REACHED_DELTA,
+        "success_delta": MATERIAL_SUCCESS_DELTA,
+        "lifted_delta": MATERIAL_LIFTED_DELTA,
+    }
+
+
+def _row_int(row: Mapping[str, Any], key: str, default: int = 0) -> int:
+    try:
+        return int(row.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def build_splice_material_improvement(
+    rows: list[dict[str, Any]],
+    *,
+    baseline_id: str,
+    splice_kind: str,
+    min_episodes: int = MIN_MATERIAL_EPISODES,
+) -> dict[str, Any]:
+    """Validate splice outcome deltas without applying thresholds below n=10.
+
+    Small diagnostic runs still expose their deltas, but they are explicitly
+    qualitative-only and cannot unlock material-improvement decisions.
+    """
+
+    baseline = next((row for row in rows if row.get("ID") == baseline_id), None)
+    threshold = {
+        "min_episodes_per_arm": int(min_episodes),
+        "reached_delta": MATERIAL_REACHED_DELTA,
+        "success_delta": MATERIAL_SUCCESS_DELTA,
+        "lifted_delta": MATERIAL_LIFTED_DELTA,
+    }
+    if baseline is None:
+        return {
+            "schema_version": "t8_1_splice_material_improvement_v1",
+            "status": "FAIL",
+            "splice_kind": splice_kind,
+            "baseline_id": baseline_id,
+            "threshold": threshold,
+            f"{splice_kind}_material_improvement": False,
+            "blocking_reasons": ["missing_baseline_row"],
+            "rows": [],
+        }
+
+    baseline_episodes = _row_int(baseline, "episodes")
+    material_rows: list[dict[str, Any]] = []
+    for row in rows:
+        if row.get("ID") == baseline_id:
+            continue
+        candidate_episodes = _row_int(row, "episodes")
+        quantitative_eligible = (
+            baseline_episodes >= int(min_episodes) and candidate_episodes >= int(min_episodes)
+        )
+        reached_delta = _row_int(row, "reached") - _row_int(baseline, "reached")
+        success_delta = _row_int(row, "success") - _row_int(baseline, "success")
+        lifted_delta = _row_int(row, "lifted") - _row_int(baseline, "lifted")
+        threshold_met = (
+            reached_delta >= MATERIAL_REACHED_DELTA
+            or success_delta >= MATERIAL_SUCCESS_DELTA
+            or lifted_delta >= MATERIAL_LIFTED_DELTA
+        )
+        material_rows.append(
+            {
+                "ID": row.get("ID"),
+                "baseline_id": baseline_id,
+                "baseline_episodes": baseline_episodes,
+                "candidate_episodes": candidate_episodes,
+                "min_episodes_per_arm": int(min_episodes),
+                "evidence_mode": "quantitative_threshold" if quantitative_eligible else "qualitative_only",
+                "quantitative_threshold_eligible": quantitative_eligible,
+                "threshold_not_applied_reason": None
+                if quantitative_eligible
+                else f"requires_n_ge_{int(min_episodes)}_per_arm",
+                "reached_delta": reached_delta,
+                "success_delta": success_delta,
+                "lifted_delta": lifted_delta,
+                "threshold_met": threshold_met,
+                "material_improvement": bool(quantitative_eligible and threshold_met),
+            }
+        )
+    return {
+        "schema_version": "t8_1_splice_material_improvement_v1",
+        "status": "PASS",
+        "splice_kind": splice_kind,
+        "baseline_id": baseline_id,
+        "threshold": threshold,
+        f"{splice_kind}_material_improvement": any(row["material_improvement"] for row in material_rows),
+        "qualitative_only": any(row["evidence_mode"] == "qualitative_only" for row in material_rows),
+        "rows": material_rows,
+    }
+
+
+def write_splice_material_improvement(
+    out_dir: Path,
+    rows: list[dict[str, Any]],
+    *,
+    baseline_id: str,
+    splice_kind: str,
+) -> dict[str, Any]:
+    payload = build_splice_material_improvement(
+        rows,
+        baseline_id=baseline_id,
+        splice_kind=splice_kind,
+    )
+    write_csv(out_dir / "material_improvement.csv", payload["rows"])
+    write_json(out_dir / "material_improvement.json", payload)
+    return payload
 
 
 def run_single_policy_eval(
