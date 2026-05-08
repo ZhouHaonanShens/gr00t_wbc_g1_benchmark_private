@@ -323,8 +323,10 @@ def _extract_commands(payload: Any) -> list[str]:
                 if isinstance(value, str):
                     commands.append(value)
                 elif isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray, str)):
-                    if all(isinstance(item, (str, int, float)) for item in value):
+                    if key_text in {"argv", "args"} and all(isinstance(item, (str, int, float)) for item in value):
                         commands.append(" ".join(shlex.quote(str(item)) for item in value))
+                    elif all(isinstance(item, str) for item in value):
+                        commands.extend(str(item) for item in value)
                     else:
                         commands.extend(_extract_commands(value))
                 elif isinstance(value, Mapping):
