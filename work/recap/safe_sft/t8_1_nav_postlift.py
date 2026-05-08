@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import gc
 import importlib.util
 import json
@@ -9,7 +8,6 @@ import math
 import os
 from pathlib import Path
 import sys
-import time
 from typing import Any, Mapping
 
 import numpy as np
@@ -17,8 +15,6 @@ import numpy as np
 from work.recap.safe_sft.entrypoint import (
     DEFAULT_CANONICAL_IDENTITY,
     DEFAULT_OFFICIAL_BASE,
-    DEFAULT_TASK_PROMPT,
-    MODALITIES,
     REPO_ROOT,
     WBC_ROOT,
     ISAAC_GR00T_ROOT,
@@ -26,18 +22,15 @@ from work.recap.safe_sft.entrypoint import (
     freeze_all_params,
     git_output,
     inject_lora,
-    json_default,
     load_policy,
     rel,
     sha256_file,
-    surface_hashes,
     utc_now,
     write_csv,
     write_json,
 )
 from work.recap.safe_sft.t8_smoke import (
     append_jsonl,
-    array_stats,
     resolve,
 )
 
@@ -439,7 +432,6 @@ def run_single_policy_eval(
             prev_action = None
             while not done and outer < max(1, int(max_episode_steps) // 20):
                 action = get_action(sim_policy, obs)
-                snap_before = helpers._collect_env_snapshot(env)
                 jump = chunk_boundary_jump(prev_action, action)
                 obs, reward, term, trunc, info = env.step(action)
                 done = bool(helpers._scalarize_bool(term) or helpers._scalarize_bool(trunc))
@@ -587,7 +579,6 @@ def run_splice_eval(
                         action = select_post_lift_action(cand_action, base_action, variant, reached_so_far, lifted_so_far)
                     snap_before = helpers._collect_env_snapshot(env)
                     base_nav = np.asarray(base_action.get("action.navigate_command"), dtype=np.float32)
-                    cand_nav = np.asarray(cand_action.get("action.navigate_command"), dtype=np.float32)
                     selected_nav = np.asarray(action.get("action.navigate_command"), dtype=np.float32)
                     nav_cos = mean_nav_cosine(selected_nav, base_nav)
                     projection = nav_projection_to_apple(selected_nav, snap_before)
@@ -871,7 +862,6 @@ def decide_final(base_rows: list[dict[str, Any]], nav_rows: list[dict[str, Any]]
         if nav_material.get("nav_splice_material_improvement"):
             return "NAV_SPLICE_IMPROVES"
     # Direction/timing bug if no material outcome improvement but nav telemetry is poor.
-    direction_path = None
     # Caller records an explicit marker in nav rows where possible.
     for r in nav_rows:
         if r.get("nav_direction_timing_bug"):
