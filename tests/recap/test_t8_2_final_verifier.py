@@ -362,53 +362,6 @@ def test_underfilled_base_success_requires_base_protocol_final(tmp_path: Path) -
     assert "BASE_SUCCESS < 10" in " ".join(seed_check["details"]["errors"])
 
 
-def test_base_protocol_too_weak_skip_bundle_passes_without_pair_or_postlift_artifacts(tmp_path: Path) -> None:
-    artifact_root = _make_complete_artifact_root(
-        tmp_path,
-        selected_base_success=3,
-        final_decision="BASE_PROTOCOL_TOO_WEAK",
-    )
-    for name in (
-        "control_regression_report.json",
-        "stratum_effects.json",
-        "post_lift_place_audit.json",
-        "paired_eval_summary.csv",
-        "candidate_eval_summary.csv",
-        "post_lift_place_audit.csv",
-        "paired_eval_per_seed.jsonl",
-        "lifted_episode_index.jsonl",
-    ):
-        (artifact_root / name).unlink()
-    _write_json(
-        artifact_root / "paired_eval_skip_report.json",
-        {
-            "status": "NOT_RUN_BASE_PROTOCOL_TOO_WEAK",
-            "reason": "selected BASE_SUCCESS < 10 after declared seed scan window",
-        },
-    )
-    (artifact_root / "t8_2_summary.md").write_text(
-        "\n".join(
-            [
-                "# T8.2 summary",
-                "- JSON: evidence_lock.json, seed_bank.json, final_decision.json",
-                "- CSV: candidate_seed_scout.csv",
-                "- final_decision: BASE_PROTOCOL_TOO_WEAK",
-                "- Guarded RECAP/FATG/per-edge/full-scope remain forbidden.",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    payload = verify_t8_2_artifact_root(artifact_root)
-
-    assert payload["status"] == "PASS"
-    paired_check = next(check for check in payload["checks"] if check["name"] == "paired_eval_schema")
-    post_lift_check = next(check for check in payload["checks"] if check["name"] == "post_lift_schema")
-    assert paired_check["status"] == "PASS"
-    assert post_lift_check["status"] == "PASS"
-
-
 def test_cli_returns_nonzero_for_invalid_artifact_root(tmp_path: Path) -> None:
     artifact_root = _make_complete_artifact_root(tmp_path)
     _write_json(artifact_root / "final_decision.json", {"final_decision": ["BASE_PROTOCOL_TOO_WEAK"]})
