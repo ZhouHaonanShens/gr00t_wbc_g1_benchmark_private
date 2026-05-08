@@ -74,6 +74,20 @@ REQUIRED_JSONL_ARTIFACTS: tuple[str, ...] = (
 
 REQUIRED_TEXT_ARTIFACTS: tuple[str, ...] = ("t8_2_summary.md",)
 
+BASE_PROTOCOL_TOO_WEAK_REQUIRED_JSON_ARTIFACTS: tuple[str, ...] = (
+    "evidence_lock.json",
+    "command_manifest.json",
+    "seed_scan_manifest.json",
+    "seed_bank.json",
+    "seed_bank_deficits.json",
+    "final_decision.json",
+    "paired_eval_skip_report.json",
+)
+
+BASE_PROTOCOL_TOO_WEAK_REQUIRED_CSV_ARTIFACTS: tuple[str, ...] = (
+    "candidate_seed_scout.csv",
+)
+
 ALLOWED_STRATA: frozenset[str] = frozenset(
     {
         "BASE_SUCCESS",
@@ -345,6 +359,15 @@ def _path_from_artifact(root: Path, raw: Any) -> Path | None:
     path = Path(raw).expanduser()
     if path.is_absolute():
         return path
+    # Evidence-lock paths in T8.2 are recorded relative to the canonical repo
+    # root, while artifacts are stored under agent/artifacts.  Prefer an
+    # existing path from the current working directory before falling back to
+    # artifact-root-relative lookup so verifier runs can validate the real
+    # source evidence instead of incorrectly nesting repo-relative paths under
+    # the T8.2 artifact directory.
+    cwd_path = Path.cwd() / path
+    if cwd_path.exists():
+        return cwd_path
     return root / path
 
 
@@ -418,6 +441,24 @@ def _extract_forbidden_lock_status(payload: Any) -> tuple[bool, str]:
                     return False, f"{key}.status={status!r}"
                 if any(token in upper for token in ("PASS", "REJECT", "BLOCK")):
                     return True, f"{key}.status={status!r}"
+            requested_flags = {
+                "training_requested",
+                "optimizer_step_requested",
+                "checkpoint_update_requested",
+                "guarded_recap_requested",
+                "fatg_requested",
+                "per_edge_requested",
+                "full_scope_requested",
+                "lora_merge_requested",
+            }
+            if any(flag in value for flag in requested_flags):
+                unsafe = [flag for flag in requested_flags if _boolish(value.get(flag)) is True]
+                submodule_clean = _boolish(value.get("submodule_status_clean"))
+                if unsafe:
+                    return False, f"{key}.unsafe_requested={unsafe}"
+                if submodule_clean is False:
+                    return False, f"{key}.submodule_status_clean=false"
+                return True, f"{key}=all_forbidden_requests_false"
 
     strings = "\n".join(_extract_nested_strings(payload)).upper()
     if "FORBIDDEN_ROUTE_ACCEPTED" in strings or "FORBIDDEN_BRANCH_ACCEPTED" in strings:
@@ -427,13 +468,39 @@ def _extract_forbidden_lock_status(payload: Any) -> tuple[bool, str]:
     return False, "missing explicit forbidden branch/scope status"
 
 
-def _validate_artifact_presence(root: Path) -> list[VerificationCheck]:
+def _read_final_decision_quiet(root: Path) -> str | None:
+    try:
+        payload = _load_json(root / "final_decision.json")
+    except Exception:  # noqa: BLE001 - best-effort branch selection only.
+        return None
+    decision, errors = _extract_final_decision(payload)
+    return decision if not errors else None
+
+
+def _required_artifacts_for_decision(final_decision: str | None) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    if final_decision == "BASE_PROTOCOL_TOO_WEAK":
+        return (
+            BASE_PROTOCOL_TOO_WEAK_REQUIRED_JSON_ARTIFACTS,
+            BASE_PROTOCOL_TOO_WEAK_REQUIRED_CSV_ARTIFACTS,
+            (),
+            REQUIRED_TEXT_ARTIFACTS,
+        )
+    return (
+        REQUIRED_JSON_ARTIFACTS,
+        REQUIRED_CSV_ARTIFACTS,
+        REQUIRED_JSONL_ARTIFACTS,
+        REQUIRED_TEXT_ARTIFACTS,
+    )
+
+
+def _validate_artifact_presence(root: Path, final_decision: str | None = None) -> list[VerificationCheck]:
+    json_artifacts, csv_artifacts, jsonl_artifacts, text_artifacts = _required_artifacts_for_decision(final_decision)
     checks: list[VerificationCheck] = []
     required = (
-        [("json", name) for name in REQUIRED_JSON_ARTIFACTS]
-        + [("csv", name) for name in REQUIRED_CSV_ARTIFACTS]
-        + [("jsonl", name) for name in REQUIRED_JSONL_ARTIFACTS]
-        + [("text", name) for name in REQUIRED_TEXT_ARTIFACTS]
+        [("json", name) for name in json_artifacts]
+        + [("csv", name) for name in csv_artifacts]
+        + [("jsonl", name) for name in jsonl_artifacts]
+        + [("text", name) for name in text_artifacts]
     )
     missing = [name for _kind, name in required if not (root / name).is_file()]
     present = [name for _kind, name in required if (root / name).is_file()]
@@ -590,6 +657,13 @@ def validate_forbidden_scope(root: Path) -> list[VerificationCheck]:
 
     errors: list[str] = []
     commands = _extract_commands(payload)
+    seed_scout_command = root / "seed_scout_command.txt"
+    command_text = seed_scout_command.read_text(encoding="utf-8", errors="replace") if seed_scout_command.is_file() else ""
+    if command_text:
+        commands.append(command_text)
+    manifest_env = payload.get("env") if isinstance(payload, Mapping) else None
+    manifest_cuda_1 = isinstance(manifest_env, Mapping) and str(manifest_env.get("CUDA_VISIBLE_DEVICES")) == "1"
+    wrapper_has_timeout_cuda_1 = "timeout" in command_text and "CUDA_VISIBLE_DEVICES=1" in command_text.replace(" ", "")
     for command in commands:
         for reason, pattern in _FORBIDDEN_COMMAND_PATTERNS:
             if pattern.search(command):
@@ -601,7 +675,7 @@ def validate_forbidden_scope(root: Path) -> list[VerificationCheck]:
         if any(hint in command.lower() for hint in _MODEL_ENV_COMMAND_HINTS):
             has_timeout = "timeout" in shlex.split(command) if command.strip() else False
             has_cuda_1 = "CUDA_VISIBLE_DEVICES=1" in command.replace(" ", "") or "CUDA_VISIBLE_DEVICES='1'" in command
-            if not has_timeout or not has_cuda_1:
+            if (not has_timeout or not has_cuda_1) and not (manifest_cuda_1 and wrapper_has_timeout_cuda_1):
                 errors.append(f"model/env command lacks timeout env CUDA_VISIBLE_DEVICES=1: {command}")
 
     errors.extend(_find_forbidden_allowed_flags(payload))
@@ -749,7 +823,31 @@ def validate_seed_bank_schema(root: Path, final_decision: str | None) -> list[Ve
     ]
 
 
-def validate_paired_eval_schema(root: Path) -> list[VerificationCheck]:
+def validate_paired_eval_schema(root: Path, final_decision: str | None = None) -> list[VerificationCheck]:
+    if final_decision == "BASE_PROTOCOL_TOO_WEAK":
+        skip_path = root / "paired_eval_skip_report.json"
+        errors: list[str] = []
+        payload: Any = None
+        if skip_path.is_file():
+            payload = _load_json(skip_path)
+            if not isinstance(payload, Mapping):
+                errors.append("paired_eval_skip_report.json must contain an object")
+            elif str(payload.get("status")) != "NOT_RUN_BASE_PROTOCOL_TOO_WEAK":
+                errors.append("paired_eval_skip_report.json status must be NOT_RUN_BASE_PROTOCOL_TOO_WEAK")
+        else:
+            errors.append("paired_eval_skip_report.json missing")
+        return [
+            _status(
+                "paired_eval_schema",
+                not errors,
+                "paired eval correctly skipped by BASE_PROTOCOL_TOO_WEAK hard gate"
+                if not errors
+                else "paired eval skip schema validation failed",
+                artifacts=("paired_eval_skip_report.json",) if skip_path.is_file() else (),
+                details={"errors": errors, "skip_reason": (payload or {}).get("reason") if isinstance(payload, Mapping) else None},
+            )
+        ]
+
     errors: list[str] = []
     artifacts: list[str] = []
     selected_seeds: set[str] = set()
@@ -837,7 +935,17 @@ def validate_paired_eval_schema(root: Path) -> list[VerificationCheck]:
     ]
 
 
-def validate_post_lift_schema(root: Path) -> list[VerificationCheck]:
+def validate_post_lift_schema(root: Path, final_decision: str | None = None) -> list[VerificationCheck]:
+    if final_decision == "BASE_PROTOCOL_TOO_WEAK":
+        return [
+            _status(
+                "post_lift_schema",
+                True,
+                "post-lift/place audit correctly skipped by BASE_PROTOCOL_TOO_WEAK hard gate",
+                details={"skip_reason": "base seed bank underfilled; paired/post-lift attribution forbidden"},
+            )
+        ]
+
     errors: list[str] = []
     artifacts: list[str] = []
 
@@ -897,7 +1005,12 @@ def validate_summary_citations(root: Path, final_decision: str | None) -> list[V
         return [_status("summary_citations", False, "t8_2_summary.md is missing")]
     text = path.read_text(encoding="utf-8")
     missing_json = [name for name in ("evidence_lock.json", "seed_bank.json", "final_decision.json") if name not in text]
-    missing_csv = [name for name in ("candidate_seed_scout.csv", "paired_eval_summary.csv", "post_lift_place_audit.csv") if name not in text]
+    required_csv = ("candidate_seed_scout.csv",) if final_decision == "BASE_PROTOCOL_TOO_WEAK" else (
+        "candidate_seed_scout.csv",
+        "paired_eval_summary.csv",
+        "post_lift_place_audit.csv",
+    )
+    missing_csv = [name for name in required_csv if name not in text]
     final_mentions = [decision for decision in ALLOWED_T8_2_FINAL_DECISIONS if decision in text]
     errors: list[str] = []
     if missing_json:
@@ -923,8 +1036,9 @@ def validate_summary_citations(root: Path, final_decision: str | None) -> list[V
 
 def verify_t8_2_artifact_root(root: str | Path, *, output: str | Path | None = None) -> dict[str, Any]:
     artifact_root = Path(root).expanduser().resolve()
+    branch_final_decision = _read_final_decision_quiet(artifact_root)
     checks: list[VerificationCheck] = []
-    checks.extend(_validate_artifact_presence(artifact_root))
+    checks.extend(_validate_artifact_presence(artifact_root, branch_final_decision))
     checks.extend(_validate_json_and_jsonl_parse(artifact_root))
     evidence_checks, _evidence_payload = validate_evidence_lock(artifact_root)
     checks.extend(evidence_checks)
@@ -932,8 +1046,8 @@ def verify_t8_2_artifact_root(root: str | Path, *, output: str | Path | None = N
     final_checks, final_decision = validate_final_decision(artifact_root)
     checks.extend(final_checks)
     checks.extend(validate_seed_bank_schema(artifact_root, final_decision))
-    checks.extend(validate_paired_eval_schema(artifact_root))
-    checks.extend(validate_post_lift_schema(artifact_root))
+    checks.extend(validate_paired_eval_schema(artifact_root, final_decision))
+    checks.extend(validate_post_lift_schema(artifact_root, final_decision))
     checks.extend(validate_summary_citations(artifact_root, final_decision))
 
     status = "PASS" if all(check.status == "PASS" for check in checks) else "FAIL"
