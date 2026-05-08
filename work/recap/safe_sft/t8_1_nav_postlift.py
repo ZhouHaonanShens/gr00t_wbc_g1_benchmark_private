@@ -774,8 +774,18 @@ def post_lift_audit(out_dir: Path, sources: dict[str, Path]) -> dict[str, Any]:
                 )
     write_csv(out_dir / "post_lift_place_summary.csv", summary_rows)
     write_csv(out_dir / "post_lift_phase_telemetry.csv", phase_rows)
+    post_lift_case_count = len(summary_rows)
+    quantitative_threshold_eligible = post_lift_case_count >= MIN_MATERIAL_EPISODES
     answers = {
-        "lifted_but_not_success_count": len(summary_rows),
+        "lifted_but_not_success_count": post_lift_case_count,
+        "min_cases_for_quantitative_blocker": MIN_MATERIAL_EPISODES,
+        "evidence_mode": "quantitative_threshold"
+        if quantitative_threshold_eligible
+        else "qualitative_only",
+        "quantitative_threshold_eligible": quantitative_threshold_eligible,
+        "threshold_not_applied_reason": None
+        if quantitative_threshold_eligible
+        else f"requires_n_ge_{MIN_MATERIAL_EPISODES}_post_lift_cases",
         "any_moves_toward_plate": any(bool(r.get("apple_moved_toward_plate_after_lift")) for r in summary_rows),
         "any_reached_plate": any(bool(r.get("reached_plate")) for r in summary_rows),
         "any_release_proxy": any(bool(r.get("released")) for r in summary_rows),
@@ -853,23 +863,38 @@ def decide_final(base_rows: list[dict[str, Any]], nav_rows: list[dict[str, Any]]
         return "BASE_SEEDS_TOO_HARD"
     n0 = next((r for r in nav_rows if r["ID"] == "N0"), None)
     if n0 is not None:
-        for r in nav_rows:
-            if r["ID"] == "N0":
-                continue
-            if int(r.get("reached", 0)) >= int(n0.get("reached", 0)) + 2 or int(r.get("success", 0)) >= int(n0.get("success", 0)) + 1 or int(r.get("lifted", 0)) >= int(n0.get("lifted", 0)) + 2:
-                return "NAV_SPLICE_IMPROVES"
+        nav_material = build_splice_material_improvement(
+            nav_rows,
+            baseline_id="N0",
+            splice_kind="nav_splice",
+        )
+        if nav_material.get("nav_splice_material_improvement"):
+            return "NAV_SPLICE_IMPROVES"
     # Direction/timing bug if no material outcome improvement but nav telemetry is poor.
     direction_path = None
     # Caller records an explicit marker in nav rows where possible.
     for r in nav_rows:
         if r.get("nav_direction_timing_bug"):
             return "NAV_DIRECTION_TIMING_BUG"
-    if post.get("answers", {}).get("lifted_but_not_success_count", 0) > 0:
+    post_answers = post.get("answers", {})
+    if (
+        post_answers.get("lifted_but_not_success_count", 0) > 0
+        and post_answers.get("quantitative_threshold_eligible") is True
+    ):
         return "POST_LIFT_PLACE_BLOCKER"
     return "GUARDED_RECAP_STILL_FORBIDDEN"
 
 
-def write_report(out: Path, final: str, base_rows: list[dict[str, Any]], nav_rows: list[dict[str, Any]], post: Mapping[str, Any], p_rows: list[dict[str, Any]] | None) -> None:
+def write_report(
+    out: Path,
+    final: str,
+    base_rows: list[dict[str, Any]],
+    nav_rows: list[dict[str, Any]],
+    post: Mapping[str, Any],
+    p_rows: list[dict[str, Any]] | None,
+    nav_material: Mapping[str, Any] | None,
+    p_material: Mapping[str, Any] | None,
+) -> None:
     lines = [
         "# GR00T T8.1 Navigate + Post-Lift Follow-up Report",
         "",
@@ -892,14 +917,34 @@ def write_report(out: Path, final: str, base_rows: list[dict[str, Any]], nav_row
         "## Post-lift/place audit",
         "",
         f"- lifted_but_not_success_count: {post.get('answers', {}).get('lifted_but_not_success_count')}",
+        f"- evidence_mode: {post.get('answers', {}).get('evidence_mode')}",
+        f"- quantitative_threshold_eligible: {post.get('answers', {}).get('quantitative_threshold_eligible')}",
         f"- any_moves_toward_plate: {post.get('answers', {}).get('any_moves_toward_plate')}",
         f"- any_reached_plate: {post.get('answers', {}).get('any_reached_plate')}",
         f"- any_release_proxy: {post.get('answers', {}).get('any_release_proxy')}",
     ]
+    if nav_material is not None:
+        lines += [
+            "",
+            "## Navigate splice material threshold",
+            "",
+            f"- material_improvement: {nav_material.get('nav_splice_material_improvement')}",
+            f"- qualitative_only_present: {nav_material.get('qualitative_only')}",
+            f"- threshold: `{json.dumps(nav_material.get('threshold'), ensure_ascii=False)}`",
+        ]
     if p_rows is not None:
         lines += ["", "## Post-lift splice", "", "| ID | episodes | success | reached | lifted | failure_modes |", "|---|---:|---:|---:|---:|---|"]
         for r in p_rows:
             lines.append(f"| {r['ID']} | {r['episodes']} | {r['success']} | {r['reached']} | {r['lifted']} | {json.dumps(r['failure_modes'], ensure_ascii=False)} |")
+    if p_material is not None:
+        lines += [
+            "",
+            "## Post-lift splice material threshold",
+            "",
+            f"- material_improvement: {p_material.get('post_lift_splice_material_improvement')}",
+            f"- qualitative_only_present: {p_material.get('qualitative_only')}",
+            f"- threshold: `{json.dumps(p_material.get('threshold'), ensure_ascii=False)}`",
+        ]
     lines += [
         "",
         "## Scope guard",
@@ -987,6 +1032,8 @@ def main(argv: list[str] | None = None) -> int:
     nav_rows: list[dict[str, Any]] = []
     nav_direction_rows: list[dict[str, Any]] = []
     p_rows: list[dict[str, Any]] | None = None
+    nav_material_payload: dict[str, Any] | None = None
+    p_material_payload: dict[str, Any] | None = None
     post_payload: dict[str, Any] = {"answers": {"lifted_but_not_success_count": 0}}
     if runner_ok:
         base_policy = load_policy_with_optional_lora(resolve(args.base_checkpoint))
@@ -1033,6 +1080,12 @@ def main(argv: list[str] | None = None) -> int:
                 write_csv(p_dir / "post_lift_splice_matrix.csv", p_rows)
                 write_csv(p_dir / "post_lift_splice_direction_timing.csv", p["direction_rows"])
                 write_json(p_dir / "post_lift_splice_matrix.json", {"status": "PASS", "seed_list": seeds, "rows": p_rows})
+                p_material_payload = write_splice_material_improvement(
+                    p_dir,
+                    p_rows,
+                    baseline_id="P0",
+                    splice_kind="post_lift_splice",
+                )
         finally:
             del base_policy
             del candidate_policy
@@ -1047,28 +1100,12 @@ def main(argv: list[str] | None = None) -> int:
 
     # Mark nav direction timing bug if telemetry is poor and no material outcome improvement.
     if nav_rows:
-        # Write an explicit material improvement artifact.
-        n0 = next((r for r in nav_rows if r["ID"] == "N0"), None)
-        material = []
-        if n0 is not None:
-            for r in nav_rows:
-                if r["ID"] == "N0":
-                    continue
-                material.append(
-                    {
-                        "ID": r["ID"],
-                        "reached_delta": int(r.get("reached", 0)) - int(n0.get("reached", 0)),
-                        "success_delta": int(r.get("success", 0)) - int(n0.get("success", 0)),
-                        "lifted_delta": int(r.get("lifted", 0)) - int(n0.get("lifted", 0)),
-                        "material_improvement": (
-                            int(r.get("reached", 0)) >= int(n0.get("reached", 0)) + 2
-                            or int(r.get("success", 0)) >= int(n0.get("success", 0)) + 1
-                            or int(r.get("lifted", 0)) >= int(n0.get("lifted", 0)) + 2
-                        ),
-                    }
-                )
-        write_csv(out / "navigate_splice" / "material_improvement.csv", material)
-        write_json(out / "navigate_splice" / "material_improvement.json", {"nav_splice_material_improvement": any(m["material_improvement"] for m in material), "rows": material})
+        nav_material_payload = write_splice_material_improvement(
+            out / "navigate_splice",
+            nav_rows,
+            baseline_id="N0",
+            splice_kind="nav_splice",
+        )
 
     final = decide_final(base_rows, nav_rows, post_payload, runner_ok)
     final_payload = {
@@ -1076,6 +1113,9 @@ def main(argv: list[str] | None = None) -> int:
         "allowed_final_decisions": sorted(ALLOWED_FINAL),
         "base_rows": base_rows,
         "nav_rows": nav_rows,
+        "nav_splice_material_evidence": nav_material_payload,
+        "post_lift_splice_rows": p_rows,
+        "post_lift_splice_material_evidence": p_material_payload,
         "post_lift_answers": post_payload.get("answers", {}),
         "phase5_training_allowed": final == "NAV_SPLICE_IMPROVES",
         "guarded_recap_allowed": False,
@@ -1083,7 +1123,16 @@ def main(argv: list[str] | None = None) -> int:
         "generated_at_utc": utc_now(),
     }
     write_json(out / "final_decision.json", final_payload)
-    write_report(out, final, base_rows, nav_rows, post_payload, p_rows)
+    write_report(
+        out,
+        final,
+        base_rows,
+        nav_rows,
+        post_payload,
+        p_rows,
+        nav_material_payload,
+        p_material_payload,
+    )
     return 0 if final != "RUNNER_OR_CONTRACT_REGRESSION" else 2
 
 
