@@ -44,6 +44,7 @@ from work.recap.r2_authentic_eval.delta_stats import (
     newcombe_half_width_at_baseline,
     per_cell_below_trigger_probability,
 )
+from work.recap.r2_authentic_eval.exclusion import filter_evidence_grade
 from work.recap.r2_authentic_eval.eval_runner import (
     AuthenticEvalRequest,
     R2CellResult,
@@ -78,22 +79,22 @@ def build_statistical_regime(
     *,
     baseline_marker: dict[str, Any],
     n_valid_cells: int,
+    raw_observation_cell_count: int | None = None,
 ) -> dict[str, Any]:
-    """Populate the runtime statistical_regime dict (V3-FIX-1 + V4-FIX-1 SSOT).
-
-    Reads ``baseline_succ`` / ``baseline_total`` from the marker payload at the
-    call site (Critic 5.1 closure: never from a module-level mutable global);
-    propagates ``n_valid_cells`` from the live R2.0 inventory count.
-    """
+    """Populate runtime statistical_regime from marker and evidence count."""
     succ = int(baseline_marker.get("success_count", R2_BASELINE_SUCC_DEFAULT))
     total = int(baseline_marker.get("episode_count", R2_BASELINE_N_DEFAULT))
+    evidence_count = int(n_valid_cells)
+    raw_count = evidence_count if raw_observation_cell_count is None else int(raw_observation_cell_count)
     return {
         "baseline_succ": succ,
         "baseline_total": total,
-        "n_valid_cells": int(n_valid_cells),
+        "n_valid_cells": evidence_count,
+        "evidence_grade_cell_count": evidence_count,
+        "raw_observation_cell_count": raw_count,
         "per_cell_p_below_trigger": per_cell_below_trigger_probability(succ, total),
         "family_wise_at_baseline": family_wise_error_rate_at_baseline(
-            succ, total, n_cells=int(n_valid_cells)
+            succ, total, n_cells=evidence_count
         ),
         "newcombe_half_width_at_baseline": newcombe_half_width_at_baseline(succ, total),
         "regime_label": "broad-net pilot signal",
@@ -268,7 +269,12 @@ def run_r2_summarise(args: argparse.Namespace) -> int:
         json.loads(p.read_text(encoding="utf-8")) for p in cell_jsons
     ]
     baseline_marker = validate_baseline_pass_marker(P0B_PROTOCOL)
-    stat = build_statistical_regime(baseline_marker=baseline_marker, n_valid_cells=len(raw_cells))
+    evidence_cells = filter_evidence_grade(raw_cells)  # filter excluded confounded cell; SSOT=exclusion.py
+    stat = build_statistical_regime(
+        baseline_marker=baseline_marker,
+        n_valid_cells=len(evidence_cells),
+        raw_observation_cell_count=len(raw_cells),
+    )
     summary_table = {
         "r2_summary_table_schema_version": "1.0.0",
         **stat,

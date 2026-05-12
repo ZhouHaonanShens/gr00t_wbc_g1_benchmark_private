@@ -14,6 +14,7 @@ from work.recap.r1_repro.gates import (
     wilson_ci_on_rate,
 )
 from work.recap.r2_authentic_eval.delta_stats import (
+    EVIDENCE_GRADE_N_CELLS,
     R2_BASELINE_N_DEFAULT,
     R2_BASELINE_SUCC_DEFAULT,
     R2_CELL_RESULT_SCHEMA_VERSION,
@@ -61,9 +62,19 @@ def test_per_cell_below_trigger_probability_canonical_value():
 
 
 def test_family_wise_error_rate_at_baseline_canonical_value():
-    """Family-wise rate at n_cells=5 ≈ 0.407 (plan §4.5)."""
+    """Raw-observation family-wise rate remains available when n_cells=5."""
     result = family_wise_error_rate_at_baseline(17, 30, n_cells=5)
     assert abs(result - 0.4068) < 1e-3, f"Expected ≈0.407, got {result:.6f}"
+
+
+def test_family_wise_error_rate_default_uses_evidence_grade_count():
+    result = family_wise_error_rate_at_baseline(17, 30)
+    explicit = family_wise_error_rate_at_baseline(
+        17, 30, n_cells=EVIDENCE_GRADE_N_CELLS
+    )
+    assert EVIDENCE_GRADE_N_CELLS == 4
+    assert result == explicit
+    assert abs(result - 0.3413) < 1e-3
 
 
 def test_family_wise_error_rate_at_baseline_n_cells_changes_value():

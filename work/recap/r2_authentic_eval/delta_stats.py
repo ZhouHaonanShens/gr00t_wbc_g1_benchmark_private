@@ -6,7 +6,8 @@ the SummaryRow frozen dataclass for structured result rows.
 
 Canonical values (computed at runtime, never hardcoded in the renderer):
   per_cell_below_trigger_probability(17, 30) ≈ 0.099
-  family_wise_error_rate_at_baseline(17, 30, n_cells=5) ≈ 0.407
+  family_wise_error_rate_at_baseline(17, 30) uses evidence-grade n=4 ≈ 0.341
+  raw-observation n=5 remains available by explicitly passing n_cells=5
   newcombe_half_width_at_baseline(17, 30) ≈ 0.237
 """
 
@@ -26,6 +27,7 @@ from work.recap.r1_repro.gates import (
     newcombe_ci_on_delta as newcombe_delta_ci_95,
     wilson_ci_on_rate as wilson_ci_95,
 )
+from work.recap.r2_authentic_eval.exclusion import EVIDENCE_GRADE_N_CELLS
 
 # ---------------------------------------------------------------------------
 # Module-top SCREAMING_CASE constants
@@ -82,12 +84,13 @@ def per_cell_below_trigger_probability(
 def family_wise_error_rate_at_baseline(
     baseline_succ: int = R2_BASELINE_SUCC_DEFAULT,
     n: int = R2_BASELINE_N_DEFAULT,
-    n_cells: int = 5,
+    n_cells: int = EVIDENCE_GRADE_N_CELLS,
 ) -> float:
     """Family-wise false-positive rate across n_cells independent cells.
 
     Returns 1 - (1 - per_cell_below_trigger_probability(baseline_succ, n))^n_cells.
-    At the canonical baseline (17/30) with n_cells=5, this is ≈ 0.407.
+    At the canonical baseline (17/30), the default evidence-grade n=4 is ≈ 0.341.
+    The raw-observation n=5 comparison is explicit: pass ``n_cells=5``.
     """
     per_cell = per_cell_below_trigger_probability(baseline_succ, n)
     return 1.0 - (1.0 - per_cell) ** n_cells
@@ -150,4 +153,5 @@ __all__ = [
     "R2_DECOMPOSITION_TABLE_SCHEMA_VERSION",
     "R2_CELL_RESULT_SCHEMA_VERSION",
     "R2_SCHEMA_VERSIONS",
+    "EVIDENCE_GRADE_N_CELLS",
 ]

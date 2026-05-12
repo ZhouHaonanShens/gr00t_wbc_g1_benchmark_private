@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 
 from work.recap.r2_authentic_eval.delta_stats import (
+    EVIDENCE_GRADE_N_CELLS,
     family_wise_error_rate_at_baseline,
     newcombe_half_width_at_baseline,
     per_cell_below_trigger_probability,
@@ -28,11 +29,19 @@ from work.recap.r2_authentic_eval.inventory import TrainedCheckpoint
 from work.recap.r2_authentic_eval.reports import closure_report
 
 
-def _make_stat(*, baseline_succ: int = 17, baseline_total: int = 30, n_valid_cells: int = 5) -> dict[str, Any]:
+def _make_stat(
+    *,
+    baseline_succ: int = 17,
+    baseline_total: int = 30,
+    n_valid_cells: int = EVIDENCE_GRADE_N_CELLS,
+    raw_observation_cell_count: int = 5,
+) -> dict[str, Any]:
     return {
         "baseline_succ": baseline_succ,
         "baseline_total": baseline_total,
         "n_valid_cells": n_valid_cells,
+        "evidence_grade_cell_count": n_valid_cells,
+        "raw_observation_cell_count": raw_observation_cell_count,
         "per_cell_p_below_trigger": per_cell_below_trigger_probability(baseline_succ, baseline_total),
         "family_wise_at_baseline": family_wise_error_rate_at_baseline(
             baseline_succ, baseline_total, n_cells=n_valid_cells
@@ -180,6 +189,9 @@ def test_closure_declares_statistical_regime_block() -> None:
     )
     assert f"{stat['per_cell_p_below_trigger']:.3f}" in md
     assert f"{stat['family_wise_at_baseline']:.3f}" in md
+    assert "0.341" in md
+    assert "evidence_grade_cell_count: 4" in md
+    assert "raw_observation_cell_count: 5" in md
     assert f"{stat['newcombe_half_width_at_baseline']:.3f}" in md
     assert "broad-net pilot signal" in md
 
@@ -204,8 +216,8 @@ def test_closure_statistical_regime_tracks_n_cells_change() -> None:
         baseline_marker=_make_baseline_marker(),
     )
     # narrative count
-    assert "across 5 RECAP cells" in md5
-    assert "across 4 RECAP cells" in md4
+    assert "across 5 evidence-grade RECAP cells" in md5
+    assert "across 4 evidence-grade RECAP cells" in md4
     # exponent
     assert re.search(r"\^5\b", md5) is not None
     assert re.search(r"\^4\b", md4) is not None
@@ -217,7 +229,7 @@ def test_closure_statistical_regime_tracks_n_cells_change() -> None:
     assert fwer5 != fwer4
 
     # Numeric agreement: regex extraction matches the dict's n_valid_cells
-    m_narrative = re.search(r"across (\d+) RECAP cells", md5)
+    m_narrative = re.search(r"across (\d+) evidence-grade RECAP cells", md5)
     m_exponent = re.search(r"\^(\d+)\b", md5)
     assert m_narrative is not None and int(m_narrative.group(1)) == stat5["n_valid_cells"]
     assert m_exponent is not None and int(m_exponent.group(1)) == stat5["n_valid_cells"]

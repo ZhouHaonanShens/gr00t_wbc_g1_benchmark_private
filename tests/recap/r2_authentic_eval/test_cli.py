@@ -106,8 +106,8 @@ def test_n_valid_cells_propagates_from_inventory_to_closure() -> None:
         statistical_regime=stat5,
         baseline_marker={"protocol_sha256": "abc", "timestamp_utc": "x"},
     )
-    assert "across 4 RECAP cells" in md4 and "^4" in md4
-    assert "across 5 RECAP cells" in md5 and "^5" in md5
+    assert "across 4 evidence-grade RECAP cells" in md4 and "^4" in md4
+    assert "across 5 evidence-grade RECAP cells" in md5 and "^5" in md5
     assert f"{stat4['family_wise_at_baseline']:.3f}" in md4
     assert f"{stat5['family_wise_at_baseline']:.3f}" in md5
 
@@ -212,8 +212,13 @@ def test_run_config_delta_audit_writes_report_on_attention_pause(
 # ---------------------------------------------------------------------------
 
 
-def _stub_cell_payload(rate: float, envelope_sha: str = "env_aaa") -> dict[str, Any]:
+def _stub_cell_payload(
+    rate: float,
+    envelope_sha: str = "env_aaa",
+    ckpt_abs_path: str = "/fake/g3/checkpoint-1",
+) -> dict[str, Any]:
     return {
+        "ckpt_abs_path": ckpt_abs_path,
         "success_count": int(round(rate * 30)),
         "completed_episode_total": 30,
         "rate": rate,
@@ -263,6 +268,33 @@ def test_run_r2_summarise_writes_summary_table(
     assert payload["baseline_total"] == 30
     assert "trigger_threshold" in payload
     assert len(payload["raw_cells"]) == 1
+
+
+def test_run_r2_summarise_filters_excluded_cell_for_stats(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_dir = tmp_path / "run"
+    for slug, ckpt_abs_path in (
+        ("raw-excluded", "/fake/g2_full_training/checkpoint-2200"),
+        ("evidence", "/fake/g3_conditioned/checkpoint-6600"),
+    ):
+        (run_dir / slug).mkdir(parents=True)
+        (run_dir / slug / "cell_result.json").write_text(
+            json.dumps(_stub_cell_payload(0.6, ckpt_abs_path=ckpt_abs_path)),
+            encoding="utf-8",
+        )
+    monkeypatch.setattr(
+        wf, "validate_baseline_pass_marker",
+        lambda protocol: {"success_count": 17, "episode_count": 30},
+    )
+
+    rc = wf.run_r2_summarise(type("A", (), {"run_dir": str(run_dir)})())  # type: ignore[arg-type]
+    payload = json.loads((run_dir / "summary_table.json").read_text(encoding="utf-8"))
+    assert rc == 0
+    assert payload["raw_observation_cell_count"] == 2
+    assert payload["evidence_grade_cell_count"] == 1
+    assert payload["n_valid_cells"] == 1
+    assert len(payload["raw_cells"]) == 2
 
 
 def test_run_r2_summarise_returns_nonzero_when_no_cells(tmp_path: Path) -> None:

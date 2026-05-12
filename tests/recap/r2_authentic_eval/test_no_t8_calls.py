@@ -29,6 +29,7 @@ import pytest
 
 R2_PKG_DIR = Path(__file__).resolve().parents[3] / "work" / "recap" / "r2_authentic_eval"
 CLOSURE_REPORT = R2_PKG_DIR / "reports" / "closure_report.py"
+DELTA_STATS = R2_PKG_DIR / "delta_stats.py"
 
 DEFAULT_LOC_CAP = 200
 # Caps below the default are documented deviations:
@@ -170,6 +171,18 @@ def test_closure_report_has_no_literal_floats_outside_format_specifiers() -> Non
         f"closure_report.py must not contain literal floats outside f-string "
         f"format specifiers; leftover matches: {leftover!r}"
     )
+
+
+def test_delta_stats_uses_evidence_grade_exclusion_ssot() -> None:
+    """V5-FIX: statistical default must bind to exclusion.py, not raw n=5."""
+    text = _read(DELTA_STATS)
+    assert (
+        "from work.recap.r2_authentic_eval.exclusion import EVIDENCE_GRADE_N_CELLS"
+        in text
+    )
+    assert "n_cells: int = EVIDENCE_GRADE_N_CELLS" in text
+    assert "n_cells: int = 5" not in text
+    assert "0.407" not in text
 
 
 # ---------------------------------------------------------------------------

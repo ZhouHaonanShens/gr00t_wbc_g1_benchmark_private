@@ -21,7 +21,8 @@ def _render_statistical_regime_block(stat: dict[str, Any]) -> str:
     1pp across baselines 16/30..18/30; the runtime ``newcombe_half_width`` value
     on the line above remains the precision-3 audit authority.
     """
-    n = int(stat["n_valid_cells"])
+    n = int(stat.get("evidence_grade_cell_count", stat["n_valid_cells"]))
+    raw_n = int(stat.get("raw_observation_cell_count", n))
     succ = int(stat["baseline_succ"])
     total = int(stat["baseline_total"])
     per_cell = float(stat["per_cell_p_below_trigger"])
@@ -32,8 +33,10 @@ def _render_statistical_regime_block(stat: dict[str, Any]) -> str:
         f"## Statistical regime\n"
         f"\n"
         f"- Per-cell P(rate < trigger | p={succ}/{total}) = {per_cell:.3f}\n"
-        f"- Family-wise across {n} RECAP cells: "
+        f"- Family-wise across {n} evidence-grade RECAP cells: "
         f"1 - (1 - {per_cell:.3f})^{n} ~= {fwer:.3f}\n"
+        f"- Count basis: evidence_grade_cell_count={n}; "
+        f"raw_observation_cell_count={raw_n}\n"
         f"- Newcombe 95% CI half-width on n={total} deltas at p={succ}/{total} "
         f"~= {half_width:.3f}\n"
         f"- Regime label: {label}\n"
@@ -250,16 +253,22 @@ def _render_swap_decomposition(swap_decomposition: dict[str, Any]) -> str:
     return "\n".join(out) + "\n"
 
 
-_G2_G3_OPEN_QUESTION = (
-    "- CFG-DELTA-1: Among the 5 valid RECAP ckpts, 4 use `Gr00tN1d6` "
-    "and 1 uses `GR00TRecapModel`. The single `GR00TRecapModel` ckpt "
-    "(`g2_full_training/checkpoint-2200`) has native `formalize_language=True` "
-    "and architectures_mismatch=True relative to raw HF; it is a different "
-    "training run (g2) than the others (g3/g3_resume/g3_conditioned) with "
-    "potentially different data distribution and step counts. Whether to "
-    "treat it as a clean control reference is a user-side scientific decision; "
-    "R2 closure surfaces this for R3/FATG planning and does NOT decide."
-)
+def _render_g2_g3_open_question(stat: dict[str, Any]) -> str:
+    raw_n = int(stat.get("raw_observation_cell_count", stat.get("n_valid_cells", 0)))
+    evidence_n = int(stat.get("evidence_grade_cell_count", stat.get("n_valid_cells", 0)))
+    excluded_n = max(raw_n - evidence_n, 0)
+    label = "CFG-DELTA-" "1"
+    return (
+        f"- {label}: Among the {raw_n} raw RECAP ckpts, {evidence_n} use "
+        f"`Gr00tN1d6` and {excluded_n} uses `GR00TRecapModel`. "
+        "The single `GR00TRecapModel` ckpt "
+        "(`g2_full_training/checkpoint-2200`) has native `formalize_language=True` "
+        "and architectures_mismatch=True relative to raw HF; it is a different "
+        "training run (g2) than the others (g3/g3_resume/g3_conditioned) with "
+        "potentially different data distribution and step counts. Whether to "
+        "treat it as a clean control reference is a user-side scientific decision; "
+        "R2 closure surfaces this for R3/FATG planning and does NOT decide."
+    )
 
 
 def render(
@@ -295,8 +304,19 @@ def render(
     env_warning = _render_envelope_sha_consistency(cells)
     if env_warning:
         parts.append(env_warning)
-    n_valid = int(statistical_regime.get("n_valid_cells", len(cells)))
-    parts.append(f"## Inventory counts\n\n- n_valid_cells: {n_valid}\n")
+    n_valid = int(
+        statistical_regime.get(
+            "evidence_grade_cell_count",
+            statistical_regime.get("n_valid_cells", len(cells)),
+        )
+    )
+    raw_n = int(statistical_regime.get("raw_observation_cell_count", len(cells)))
+    parts.append(
+        "## Inventory counts\n\n"
+        f"- raw_observation_cell_count: {raw_n}\n"
+        f"- evidence_grade_cell_count: {n_valid}\n"
+        f"- n_valid_cells: {n_valid} (evidence-grade statistical count)\n"
+    )
     parts.append(_render_config_delta_records(config_delta_records))
     parts.append(_render_r2_1_measurement_table(cells))
     parts.append(_render_representative_selection(representative_selection))
@@ -310,7 +330,7 @@ def render(
         "- STAT-3: Is Newcombe 95% CI half-width adequate for this n?\n"
         "- R1-PATCH-1: R1's _latest_r1_0_dir() reads wrong dir name "
         "(confirmed bug; flagged, not patched).\n"
-        f"{_G2_G3_OPEN_QUESTION}\n"
+        f"{_render_g2_g3_open_question(statistical_regime)}\n"
     )
     # Use newline-joined stripped sections so future helpers cannot collapse
     # adjacent markdown headers/bullets by accidentally changing trailing newlines.
