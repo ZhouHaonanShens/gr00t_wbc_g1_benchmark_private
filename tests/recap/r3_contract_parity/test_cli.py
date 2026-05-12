@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from work.recap.r3_contract_parity import cli, collectors
+from work.recap.r3_contract_parity.contract import PARITY_AXES, PASS, _MISSING, ParityAxisResult, ParityCellReport
 
 
 def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
@@ -38,3 +39,9 @@ def test_cli_rejects_a1_and_unknown_without_success_artifacts(tmp_path: Path, mo
     assert cli.main(["audit", "--cell", "A.1", "--output-root", str(out), "--r2-run-root", str(r2)]) == 2
     assert not (out / "A.1").exists()
     assert cli.main(["audit", "--cell", "Z.9", "--output-root", str(out), "--r2-run-root", str(r2)]) == 2
+
+
+def test_cell_manifest_serializes_missing_sentinel() -> None:
+    axis = ParityAxisResult(PARITY_AXES[0], _MISSING, "eval", PASS, "none", "probe")
+    data = cli._cell_dict(ParityCellReport("A.2", "ckpt", PASS, (axis,), ()))
+    assert data["axes"][0]["train_value"] == "__MISSING__"

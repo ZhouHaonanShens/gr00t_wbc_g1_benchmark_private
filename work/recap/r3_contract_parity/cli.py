@@ -17,7 +17,7 @@ from work.recap.r3_contract_parity.reports.summary_report import render_summary_
 
 
 def _json_safe(value: Any) -> Any:
-    if value is _MISSING:
+    if value is _MISSING or type(value) is object:
         return "__MISSING__"
     if isinstance(value, tuple):
         return [_json_safe(v) for v in value]
