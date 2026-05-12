@@ -9,8 +9,13 @@ from .advantage import (
     ADVANTAGE_RAW_COLUMN,
 )
 from .episode_writer import EpisodeWriter, summarize_value, to_jsonable_list
-from .model import GR00TRecapActionHead, GR00TRecapModel
-from .policy import AdvantageAwareGr00tPolicy, TextIndicatorGr00tPolicy
+
+_OBJECT_ALIASES = {
+    "GR00TRecapActionHead": ("work.recap.model", "GR00TRecapActionHead"),
+    "GR00TRecapModel": ("work.recap.model", "GR00TRecapModel"),
+    "AdvantageAwareGr00tPolicy": ("work.recap.policy", "AdvantageAwareGr00tPolicy"),
+    "TextIndicatorGr00tPolicy": ("work.recap.policy", "TextIndicatorGr00tPolicy"),
+}
 
 
 _SCRIPT_ALIASES = {
@@ -101,6 +106,11 @@ _MODULE_ALIASES = {
 
 
 def __getattr__(name: str):
+    if name in _OBJECT_ALIASES:
+        module_name, attr_name = _OBJECT_ALIASES[name]
+        value = getattr(import_module(module_name), attr_name)
+        globals()[name] = value
+        return value
     if name in _MODULE_ALIASES:
         module = import_module(_MODULE_ALIASES[name])
         globals()[name] = module
@@ -115,7 +125,7 @@ def __getattr__(name: str):
 
 
 def __dir__() -> list[str]:
-    return sorted(set(globals()) | _SCRIPT_ALIASES | set(_MODULE_ALIASES))
+    return sorted(set(globals()) | _SCRIPT_ALIASES | set(_MODULE_ALIASES) | set(_OBJECT_ALIASES))
 
 
 __all__ = [
