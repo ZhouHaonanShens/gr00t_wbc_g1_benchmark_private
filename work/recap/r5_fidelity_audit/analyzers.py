@@ -23,21 +23,34 @@ def _texts(c: Mapping[str, Any]) -> dict[str, str]:
     for key in ("repo_texts", "repo_files", "file_texts"):
         val = c.get(key)
         if isinstance(val, Mapping):
-            out.update({str(k): v for k, v in val.items() if isinstance(v, str)})
-    for path in c.get("source_paths", ()) or (): out.setdefault(str(path), "")
+            for path, text in val.items():
+                if isinstance(text, str):
+                    out[str(path)] = text
+    for path in c.get("source_paths", ()) or ():
+        out.setdefault(str(path), "")
     return out
 
 def _flat(c: Mapping[str, Any]) -> str:
-    parts = [x for item in _texts(c).items() for x in item]
-    parts += [str(c.get(k)) for k in ("phase_a_literals", "dataset_meta", "ckpt_cfg_by_cell", "active_path_hints") if c.get(k)]
+    parts: list[str] = []
+    for path, text in _texts(c).items():
+        parts.extend((path, text))
+    for key in ("phase_a_literals", "dataset_meta", "ckpt_cfg_by_cell", "active_path_hints"):
+        value = c.get(key)
+        if value:
+            parts.append(str(value))
     return "\n".join(parts).lower()
 
 def _has(c: Mapping[str, Any], *tokens: str) -> bool:
     text = _flat(c)
-    if any(t.lower() in text for t in tokens): return True
-    hits, wanted = c.get("symbol_hits"), {t.lower() for t in tokens}
-    if isinstance(hits, Mapping): return any(str(k).lower() in wanted and bool(v) for k, v in hits.items())
-    if isinstance(hits, Sequence) and not isinstance(hits, (str, bytes)): return any(any(t in str(h).lower() for t in wanted) for h in hits)
+    if any(token.lower() in text for token in tokens):
+        return True
+
+    hits = c.get("symbol_hits")
+    wanted = {token.lower() for token in tokens}
+    if isinstance(hits, Mapping):
+        return any(str(symbol).lower() in wanted and bool(value) for symbol, value in hits.items())
+    if isinstance(hits, Sequence) and not isinstance(hits, (str, bytes)):
+        return any(any(token in str(hit).lower() for token in wanted) for hit in hits)
     return False
 
 def _hit_path(hit: Any) -> str:
@@ -65,8 +78,10 @@ def _arts(q: Any, c: Mapping[str, Any], *tokens: str) -> tuple[str, ...]:
 
 def _hint(c: Mapping[str, Any], qid: str, *tokens: str) -> bool | None:
     hints = c.get("active_path_hints")
-    if isinstance(hints, Mapping) and qid in hints: return bool(hints[qid])
-    if f"{qid}_active" in c: return bool(c[f"{qid}_active"])
+    if isinstance(hints, Mapping) and qid in hints:
+        return bool(hints[qid])
+    if f"{qid}_active" in c:
+        return bool(c[f"{qid}_active"])
     cfg = str(c.get("ckpt_cfg_by_cell", "")).lower()
     return bool(tokens and cfg and any(t.lower() in cfg for t in tokens)) if cfg else None
 
@@ -79,11 +94,21 @@ def _lit(c: Mapping[str, Any], *tokens: str) -> bool:
     return any(t.lower() in text for t in tokens)
 
 def _res(q: Any, repo: str, active: str, conf: str, conclusion: str, c: Mapping[str, Any], *tokens: str) -> Any:
-    return compose_question_result(q, repo_presence=repo, active_path_consumption=active, confidence=conf, conclusion=conclusion, evidence_files=_paths(q, c, *tokens), evidence_artifacts=_arts(q, c, *tokens))
+    return compose_question_result(
+        q,
+        repo_presence=repo,
+        active_path_consumption=active,
+        confidence=conf,
+        conclusion=conclusion,
+        evidence_files=_paths(q, c, *tokens),
+        evidence_artifacts=_arts(q, c, *tokens),
+    )
 
 def _active(c: Mapping[str, Any], qid: str, *tokens: str) -> str:
-    h = _hint(c, qid, *tokens)
-    return IMPLEMENTED if h is True or _enabled(c, *tokens) else ABSENT
+    hint = _hint(c, qid, *tokens)
+    if hint is True or _enabled(c, *tokens):
+        return IMPLEMENTED
+    return ABSENT
 
 def _analyze_q1_scope(q: Any, c: Mapping[str, Any]) -> Any:
     hits = sum(_has(c, t) for t in ("recap", "advantage", "indicator", "critic", "condition"))
