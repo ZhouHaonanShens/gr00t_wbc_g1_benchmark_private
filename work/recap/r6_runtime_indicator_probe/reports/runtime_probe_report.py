@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from work.recap.r6_runtime_indicator_probe.contract import ProbeCounterfactual, RuntimeTrace
 from typing import Any
-
+from work.recap.r6_runtime_indicator_probe.contract import ProbeCounterfactual, RuntimeTrace
 R6_MATRIX_SHA = "6cfe1c5460ed0b34c6447785700874f563a55e374c4454c11f6c7852c6d3817b"
 R6_REPORT_SHA = "96b7f0e407895dcebc657f472e99096d2b013adabe327975f49f4f6e62a61b90"
 R5_MATRIX_SHA = "49f317f4259ea8187b35ce5d99a2788484829b1cee47566446deb2a45646dd84"
@@ -25,12 +24,15 @@ def render_runtime_probe_report(
     *,
     runtime: RuntimeTrace,
     counterfactual: ProbeCounterfactual | None,
-    budget: Any,
+    negative_runtime: RuntimeTrace | None = None,
+    budget: Any = None,
     leader_token_sha256: str,
 ) -> str:
     prompt = runtime.prompt_text_at_tokenizer[:500]
     cf = counterfactual
     neg_sha = cf.negative_trace_sha256 if cf is not None else "not_run"
+    neg_tokens = negative_runtime.prompt_tokens_sha256 if negative_runtime is not None else "not_recorded"
+    neg_l2 = negative_runtime.first_5_actions_l2 if negative_runtime is not None else "not_recorded"
     cond_equal = cf.condition_sha_equal if cf is not None else "not_run"
     diff = cf.first_5_actions_l2_diff if cf is not None else "not_run"
     cf_verdict = cf.counterfactual_verdict if cf is not None else "not_run"
@@ -65,8 +67,9 @@ def render_runtime_probe_report(
 
 ## S3 Negative counterfactual
 
-- tokens_sha256: `not_recorded_by_return_contract`
+- tokens_sha256: `{neg_tokens}`
 - condition_sha256: `{neg_sha}`
+- first_5_actions_l2: `{neg_l2}`
 - first_5_actions_l2_diff_against_positive: `{diff}`
 - counterfactual_verdict: `{cf_verdict}`
 
@@ -84,5 +87,4 @@ def render_runtime_probe_report(
 
 {branch}
 
-Cites: positive_trace_sha256=`{runtime.action_head_conditioning_sha256}`, negative_trace_sha256=`{neg_sha}`, condition_sha_equal=`{cond_equal}`, first_5_actions_l2_diff=`{diff}`. This is a 1-episode forced probe, not a 30-episode R2 success-rate rerun.
-"""
+Cites: positive_trace_sha256=`{runtime.action_head_conditioning_sha256}`, negative_trace_sha256=`{neg_sha}`, condition_sha_equal=`{cond_equal}`, first_5_actions_l2_diff=`{diff}`. This is a 1-episode forced probe, not a 30-episode R2 success-rate rerun.\n"""

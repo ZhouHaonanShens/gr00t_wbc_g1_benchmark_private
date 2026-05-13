@@ -46,7 +46,7 @@ def _write_cell(root: Path, report: CellProbeReport) -> None:
     (cell_dir / "cell_probe_report.md").write_text(render_cell_report(report), encoding="utf-8")
 
 
-def _write_forced_runtime(root: Path, runtime: Any, counterfactual: Any, budget: Any, token: str) -> None:
+def _write_forced_runtime(root: Path, runtime: Any, counterfactual: Any, budget: Any, token: str, negative_runtime: Any = None) -> None:
     if counterfactual is None:
         raise R6Error("--forced probe requires counterfactual output")
     cell_dir = root / runtime.cell_id
@@ -55,7 +55,7 @@ def _write_forced_runtime(root: Path, runtime: Any, counterfactual: Any, budget:
     _write_json(cell_dir / "runtime_trace.json", runtime)
     _write_json(cell_dir / "counterfactual.json", counterfactual)
     token_sha = hashlib.sha256(str(token).encode("utf-8")).hexdigest()
-    report = render_runtime_probe_report(runtime=runtime, counterfactual=counterfactual, budget=budget, leader_token_sha256=token_sha)
+    report = render_runtime_probe_report(runtime=runtime, counterfactual=counterfactual, negative_runtime=negative_runtime, budget=budget, leader_token_sha256=token_sha)
     (cell_dir / "FIX_R2_A1_LOAD_06_R6_RUNTIME_PROBE_REPORT.md").write_text(report, encoding="utf-8")
 
 
@@ -101,14 +101,14 @@ def _validated_probe_args(args: argparse.Namespace) -> tuple[str, str, bool]:
 
 def run_probe(args: argparse.Namespace) -> int:
     cell, token, forced = _validated_probe_args(args)
-    from work.recap.r6_runtime_indicator_probe.runtime_probe import ProbeBudget, run_runtime_probe
+    from work.recap.r6_runtime_indicator_probe.runtime_probe import ProbeBudget, get_last_negative_trace, run_runtime_probe
 
     static = trace_wiring(cell)
     budget = ProbeBudget(gpu_id=int(args.gpu))
     runtime, counterfactual = run_runtime_probe(cell, budget, token, forced=forced, counterfactual=not bool(args.no_counterfactual))
     report = CellProbeReport(cell, static, runtime, compose_final(static, runtime, counterfactual))
     if forced:
-        _write_forced_runtime(Path(args.output_root), runtime, counterfactual, budget, token)
+        _write_forced_runtime(Path(args.output_root), runtime, counterfactual, budget, token, get_last_negative_trace())
     else:
         _write_cell(Path(args.output_root), report)
     return 0

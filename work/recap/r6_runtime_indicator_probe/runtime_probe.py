@@ -19,6 +19,11 @@ _TOKEN_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 _CELL_IDS = {"A.2", "A.3", "A.4", "A.5"}
 _DEFAULT_SEED = 20000
 _COUNTERFACTUAL_THRESHOLD = 1e-3
+_LAST_NEGATIVE_TRACE: RuntimeTrace | None = None
+
+
+def get_last_negative_trace() -> RuntimeTrace | None:
+    return _LAST_NEGATIVE_TRACE
 
 
 @dataclass(frozen=True)
@@ -86,13 +91,22 @@ def _spawn_one_episode(cell_id: str, budget: ProbeBudget, *, seed: int, indicato
         "--force-indicator-mode",
         str(indicator_mode),
     ]
-    completed = subprocess.run(
-        command,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=int(budget.max_minutes_per_cell) * 60,
-    )
+    try:
+        completed = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=int(budget.max_minutes_per_cell) * 60,
+        )
+    except subprocess.CalledProcessError as exc:
+        stdout_tail = "\n".join((exc.stdout or "").splitlines()[-40:])
+        stderr_tail = "\n".join((exc.stderr or "").splitlines()[-40:])
+        raise R6Error(f"runtime child failed rc={exc.returncode}; stdout_tail={stdout_tail}; stderr_tail={stderr_tail}") from exc
+    for line in reversed((completed.stdout or "").splitlines()):
+        stripped = line.strip()
+        if stripped.startswith("{") and stripped.endswith("}"):
+            return json.loads(stripped)
     return json.loads(completed.stdout or "{}")
 
 
@@ -138,9 +152,12 @@ def run_runtime_probe(
     counterfactual: bool = True,
 ) -> tuple[RuntimeTrace, ProbeCounterfactual | None]:
     _validate_budget(cell_id, budget, leader_approval_token, forced=forced, counterfactual=counterfactual)
+    global _LAST_NEGATIVE_TRACE
+    _LAST_NEGATIVE_TRACE = None
     cell = _normalize_cell(cell_id)
     positive = _trace_from_payload(cell, _spawn_one_episode(cell, budget, seed=_DEFAULT_SEED, indicator_mode="positive"))
     if not counterfactual:
         return positive, None
     negative = _trace_from_payload(cell, _spawn_one_episode(cell, budget, seed=_DEFAULT_SEED, indicator_mode="negative"))
+    _LAST_NEGATIVE_TRACE = negative
     return positive, _build_counterfactual(cell, positive, negative)
