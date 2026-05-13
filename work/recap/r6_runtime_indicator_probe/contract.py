@@ -5,10 +5,12 @@ from typing import Literal
 
 StaticVerdict = Literal["WIRED", "BROKEN", "AMBIGUOUS"]
 RuntimeVerdict = Literal["INDICATOR_PRESENT", "INDICATOR_ABSENT", "NOT_RUN"]
+CounterfactualVerdict = Literal["INDICATOR_SENSITIVE", "INDICATOR_INVARIANT"]
 FinalVerdict = Literal[
     "ACTIVE_PATH_CONFIRMED_WIRED",
     "ACTIVE_PATH_BROKEN_AT_RUNTIME",
     "ACTIVE_PATH_BROKEN_STATIC",
+    "WIRED_STATIC_UNCONFIRMED_RUNTIME",
     "INCONCLUSIVE",
 ]
 
@@ -51,6 +53,17 @@ class RuntimeTrace:
     first_5_actions_l2: tuple[float, float, float, float, float]
     indicator_substring_present: bool
     runtime_verdict: RuntimeVerdict
+
+
+@dataclass(frozen=True)
+class ProbeCounterfactual:
+    cell_id: str
+    seed: int
+    positive_trace_sha256: str
+    negative_trace_sha256: str
+    condition_sha_equal: bool
+    first_5_actions_l2_diff: tuple[float, float, float, float, float]
+    counterfactual_verdict: CounterfactualVerdict
 
 
 @dataclass(frozen=True)

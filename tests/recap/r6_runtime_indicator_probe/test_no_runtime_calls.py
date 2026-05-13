@@ -10,7 +10,7 @@ PKG = REPO_ROOT / "work" / "recap" / "r6_runtime_indicator_probe"
 STATIC_MODULES = ("contract.py", "wiring_graph.py", "synthesis.py", "cli.py")
 FORBIDDEN_IMPORT_ROOTS = {"torch", "cuda"}
 FORBIDDEN_SNIPPETS = ("subprocess.run", "CUDA_VISIBLE_DEVICES")
-CAPS = {"__init__.py": 12, "__main__.py": 5, "contract.py": 120, "wiring_graph.py": 200, "runtime_probe.py": 180, "instrumentation.py": 100, "synthesis.py": 50, "cli.py": 130, "reports/__init__.py": 5, "reports/cell_probe_report.py": 80, "reports/summary_report.py": 80}
+CAPS = {"__init__.py": 12, "__main__.py": 5, "contract.py": 120, "wiring_graph.py": 200, "runtime_probe.py": 180, "instrumentation.py": 100, "synthesis.py": 50, "cli.py": 160, "reports/__init__.py": 5, "reports/cell_probe_report.py": 80, "reports/summary_report.py": 80, "reports/runtime_probe_report.py": 90}
 
 
 def _read(rel: str) -> str:

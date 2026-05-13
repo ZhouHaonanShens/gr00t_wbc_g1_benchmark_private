@@ -40,5 +40,5 @@ R6.0 static AST/import graph trace for evidence-grade cells A.2..A.5. A.1 remain
 
 ## Notes
 
-All public final verdict values are emitted through `compose_final`; because no R6.1 runtime trace was approved or run in R6.0, static-WIRED cells retain final verdict `INCONCLUSIVE` by the exact synthesis table.
+All public final verdict values are emitted through `compose_final`; because no R6.1 runtime trace was approved or run in R6.0, static-WIRED cells retain final verdict `WIRED_STATIC_UNCONFIRMED_RUNTIME` by the exact synthesis table until runtime evidence is collected.
 """
