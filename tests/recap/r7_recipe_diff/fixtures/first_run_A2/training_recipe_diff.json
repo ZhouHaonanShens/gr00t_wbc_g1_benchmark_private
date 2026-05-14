@@ -1,0 +1,169 @@
+{
+  "schema_version": "r7_training_recipe_diff_v1",
+  "base_cell": "A.2",
+  "generated_at_utc": "20260514T135756Z",
+  "source_openpi_report": "agent/exchange/openpi_recap_fidelity_fact_report_v1.md",
+  "deltas": [
+    {
+      "component": {
+        "component_id": "C1_dual_loss",
+        "title": "Dual conditional/unconditional loss objective",
+        "paper_section_cite": "OpenPI fidelity Q6",
+        "training_arg_name": "enable_dual_loss"
+      },
+      "current_state": "ABSENT",
+      "paper_prescribed_state": "IMPLEMENTED",
+      "diff_action": "ADD_LOSS_TERM",
+      "cli_arg_addition": [
+        "--enable-dual-loss",
+        "--dual-loss-alpha=0.5"
+      ],
+      "config_path_diff": [
+        [
+          "model.dual_loss.enabled",
+          "true"
+        ],
+        [
+          "training.dual_loss.alpha",
+          "0.5"
+        ]
+      ],
+      "evidence_files": [
+        "agent/exchange/openpi_recap_fidelity_fact_report_v1.md",
+        "work/recap/dual_loss.py",
+        "work/recap/launch_finetune_use_ddp.py",
+        "submodules/Isaac-GR00T/gr00t/configs/finetune_config.py"
+      ],
+      "rationale": "dual-loss helper exists but launcher/config do not expose active conditional/unconditional training."
+    },
+    {
+      "component": {
+        "component_id": "C2_indicator_dropout",
+        "title": "Stochastic indicator omission/dropout at training time",
+        "paper_section_cite": "OpenPI fidelity Q7",
+        "training_arg_name": "indicator_dropout_p"
+      },
+      "current_state": "ABSENT",
+      "paper_prescribed_state": "IMPLEMENTED",
+      "diff_action": "ADD_DATASET_AUG",
+      "cli_arg_addition": [
+        "--indicator-dropout-p=0.15",
+        "--indicator-dropout-seed=0"
+      ],
+      "config_path_diff": [
+        [
+          "training.indicator_dropout.p",
+          "0.15"
+        ],
+        [
+          "training.indicator_dropout.seed",
+          "0"
+        ]
+      ],
+      "evidence_files": [
+        "agent/exchange/openpi_recap_fidelity_fact_report_v1.md",
+        "work/recap/text_indicator.py",
+        "work/recap/scripts/34b_recap_numeric_adv_smoke.py",
+        "work/recap/launch_finetune_use_ddp.py"
+      ],
+      "rationale": "dropout helpers or smoke flags exist, but stochastic omission is absent from active training config."
+    },
+    {
+      "component": {
+        "component_id": "C3_learned_value",
+        "title": "Learned value-function / critic in training loop",
+        "paper_section_cite": "OpenPI fidelity Q2",
+        "training_arg_name": "enable_learned_value_head"
+      },
+      "current_state": "ABSENT",
+      "paper_prescribed_state": "IMPLEMENTED",
+      "diff_action": "ADD_LOSS_TERM",
+      "cli_arg_addition": [
+        "--enable-learned-value-head",
+        "--value-loss-alpha=0.1"
+      ],
+      "config_path_diff": [
+        [
+          "model.value_head.enabled",
+          "true"
+        ],
+        [
+          "training.value_loss.alpha",
+          "0.1"
+        ]
+      ],
+      "evidence_files": [
+        "agent/exchange/openpi_recap_fidelity_fact_report_v1.md",
+        "work/recap/advantage.py",
+        "work/recap/launch_finetune_use_ddp.py",
+        "submodules/Isaac-GR00T/gr00t/configs/finetune_config.py"
+      ],
+      "rationale": "static value/advantage labels exist, but no learned value head is active in training."
+    },
+    {
+      "component": {
+        "component_id": "C4_advantage_embedding_active",
+        "title": "advantage_input numeric sidecar consumed by action head",
+        "paper_section_cite": "OpenPI fidelity Q3",
+        "training_arg_name": "action_head_advantage_input"
+      },
+      "current_state": "PARTIAL",
+      "paper_prescribed_state": "IMPLEMENTED",
+      "diff_action": "ENABLE_FLAG",
+      "cli_arg_addition": [
+        "--action-head-advantage-input=enabled",
+        "--advantage-embedding-dim=16"
+      ],
+      "config_path_diff": [
+        [
+          "model.action_head.advantage_input.enabled",
+          "true"
+        ],
+        [
+          "model.action_head.advantage_embedding_dim",
+          "16"
+        ]
+      ],
+      "evidence_files": [
+        "agent/exchange/openpi_recap_fidelity_fact_report_v1.md",
+        "work/recap/advantage.py",
+        "work/recap/lerobot_export/dataset_export.py",
+        "work/recap/launch_finetune_use_ddp.py"
+      ],
+      "rationale": "advantage_input sidecar exists in data paths, but active action-head consumption is not wired."
+    },
+    {
+      "component": {
+        "component_id": "C5_carrier_text_v1_grad_path",
+        "title": "carrier_text_v1 tokens get gradient signal through dual-loss path",
+        "paper_section_cite": "OpenPI fidelity Q8 / GR00T R6.1 verdict",
+        "training_arg_name": "dual_loss_uses_carrier_text"
+      },
+      "current_state": "PARTIAL",
+      "paper_prescribed_state": "IMPLEMENTED",
+      "diff_action": "ADD_CLI_ARG",
+      "cli_arg_addition": [
+        "--dual-loss-uses-carrier-text",
+        "--carrier-text-field=carrier_text_v1"
+      ],
+      "config_path_diff": [
+        [
+          "training.dual_loss.uses_carrier_text",
+          "true"
+        ],
+        [
+          "data.task_text_field",
+          "carrier_text_v1"
+        ]
+      ],
+      "evidence_files": [
+        "agent/exchange/openpi_recap_fidelity_fact_report_v1.md",
+        "work/recap/text_indicator.py",
+        "work/recap/lerobot_export/dataset_export.py",
+        "agent/exchange/r6_1_runtime_probe_a2_20260513.md"
+      ],
+      "rationale": "carrier text reaches token surfaces, but R6/open-loop evidence does not prove gradient-sensitive action conditioning."
+    }
+  ],
+  "composable_cli_args": "--enable-dual-loss --dual-loss-alpha=0.5 --indicator-dropout-p=0.15 --indicator-dropout-seed=0 --enable-learned-value-head --value-loss-alpha=0.1 --action-head-advantage-input=enabled --advantage-embedding-dim=16 --dual-loss-uses-carrier-text --carrier-text-field=carrier_text_v1"
+}
