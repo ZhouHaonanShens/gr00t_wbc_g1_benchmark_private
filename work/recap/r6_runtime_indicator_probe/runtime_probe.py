@@ -75,7 +75,14 @@ def _hash_tensor(t: Any) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _spawn_one_episode(cell_id: str, budget: ProbeBudget, *, seed: int, indicator_mode: str) -> dict[str, Any]:
+def _spawn_one_episode(
+    cell_id: str,
+    budget: ProbeBudget,
+    *,
+    seed: int,
+    indicator_mode: str,
+    lora_adapter_dir: str | None = None,
+) -> dict[str, Any]:
     command = [
         "env",
         f"CUDA_VISIBLE_DEVICES={int(budget.gpu_id)}",
@@ -91,6 +98,8 @@ def _spawn_one_episode(cell_id: str, budget: ProbeBudget, *, seed: int, indicato
         "--force-indicator-mode",
         str(indicator_mode),
     ]
+    if lora_adapter_dir is not None:
+        command.extend(["--lora-adapter-dir", str(lora_adapter_dir)])
     try:
         completed = subprocess.run(
             command,
@@ -150,14 +159,21 @@ def run_runtime_probe(
     *,
     forced: bool = False,
     counterfactual: bool = True,
+    lora_adapter_dir: str | None = None,
 ) -> tuple[RuntimeTrace, ProbeCounterfactual | None]:
     _validate_budget(cell_id, budget, leader_approval_token, forced=forced, counterfactual=counterfactual)
     global _LAST_NEGATIVE_TRACE
     _LAST_NEGATIVE_TRACE = None
     cell = _normalize_cell(cell_id)
-    positive = _trace_from_payload(cell, _spawn_one_episode(cell, budget, seed=_DEFAULT_SEED, indicator_mode="positive"))
+    positive = _trace_from_payload(
+        cell,
+        _spawn_one_episode(cell, budget, seed=_DEFAULT_SEED, indicator_mode="positive", lora_adapter_dir=lora_adapter_dir),
+    )
     if not counterfactual:
         return positive, None
-    negative = _trace_from_payload(cell, _spawn_one_episode(cell, budget, seed=_DEFAULT_SEED, indicator_mode="negative"))
+    negative = _trace_from_payload(
+        cell,
+        _spawn_one_episode(cell, budget, seed=_DEFAULT_SEED, indicator_mode="negative", lora_adapter_dir=lora_adapter_dir),
+    )
     _LAST_NEGATIVE_TRACE = negative
     return positive, _build_counterfactual(cell, positive, negative)

@@ -120,6 +120,7 @@ def _run_once(cell_id: str, seed: int, max_steps: int, indicator_mode: str) -> d
         strict=True,
         attn_implementation="eager",
     )
+    base_policy = _apply_lora_adapter(base_policy, _LORA_ADAPTER_DIR)
     token_snapshot = _attach_tokenizer_proxy(base_policy)
     action_snapshot = instrumentation.attach_action_head_input_hook(base_policy.model)
     policy = Gr00tSimPolicyWrapper(base_policy, strict=True)
@@ -142,17 +143,34 @@ def _run_once(cell_id: str, seed: int, max_steps: int, indicator_mode: str) -> d
         "action_info": action_info,
     }
 
+_LORA_ADAPTER_DIR: str | None = None
+
+
+def _apply_lora_adapter(base_policy: Any, adapter_dir: str | None) -> Any:
+    if not adapter_dir:
+        return base_policy
+    adapter_path = Path(adapter_dir)
+    if not adapter_path.is_dir():
+        raise FileNotFoundError(f"missing lora adapter dir: {adapter_dir}")
+    from peft import PeftModel
+
+    base_policy.model = PeftModel.from_pretrained(base_policy.model, str(adapter_path))
+    return base_policy
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m work.recap.r6_runtime_indicator_probe.runtime_probe_worker")
     parser.add_argument("--cell", required=True)
     parser.add_argument("--max-steps", type=int, required=True)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--force-indicator-mode", required=True, choices=("positive", "negative"))
+    parser.add_argument("--lora-adapter-dir", default=None)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
+    global _LORA_ADAPTER_DIR
     args = build_parser().parse_args(argv)
+    _LORA_ADAPTER_DIR = str(args.lora_adapter_dir or "") or None
     payload = _run_once(str(args.cell).strip().upper(), int(args.seed), int(args.max_steps), str(args.force_indicator_mode))
     print(json.dumps(payload, sort_keys=True), flush=True)
     return 0

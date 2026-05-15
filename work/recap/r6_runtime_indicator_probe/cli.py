@@ -82,7 +82,7 @@ def run_trace(args: argparse.Namespace) -> int:
     return 0
 
 
-def _validated_probe_args(args: argparse.Namespace) -> tuple[str, str, bool]:
+def _validated_probe_args(args: argparse.Namespace) -> tuple[str, str, bool, str | None]:
     cell = str(args.cell).strip().upper()
     forced = bool(getattr(args, "forced", False))
     if forced and cell != _FORCED_ONLY_CELL:
@@ -96,16 +96,22 @@ def _validated_probe_args(args: argparse.Namespace) -> tuple[str, str, bool]:
         raise R6Error("--forced probe is locked to GPU 1")
     if not forced and int(args.gpu) not in {1, 2}:
         raise R6Error("--gpu accepts only 1 or 2; GPU 0/3 are rejected")
-    return cell, token, forced
+    adapter_dir = str(getattr(args, "lora_adapter_dir", "") or "").strip() or None
+    if adapter_dir is not None and not Path(adapter_dir).is_dir():
+        raise R6Error(f"--lora-adapter-dir must be an existing directory: {adapter_dir}")
+    return cell, token, forced, adapter_dir
 
 
 def run_probe(args: argparse.Namespace) -> int:
-    cell, token, forced = _validated_probe_args(args)
+    cell, token, forced, adapter_dir = _validated_probe_args(args)
     from work.recap.r6_runtime_indicator_probe.runtime_probe import ProbeBudget, get_last_negative_trace, run_runtime_probe
 
     static = trace_wiring(cell)
     budget = ProbeBudget(gpu_id=int(args.gpu))
-    runtime, counterfactual = run_runtime_probe(cell, budget, token, forced=forced, counterfactual=not bool(args.no_counterfactual))
+    probe_kwargs = {"forced": forced, "counterfactual": not bool(args.no_counterfactual)}
+    if adapter_dir is not None:
+        probe_kwargs["lora_adapter_dir"] = adapter_dir
+    runtime, counterfactual = run_runtime_probe(cell, budget, token, **probe_kwargs)
     report = CellProbeReport(cell, static, runtime, compose_final(static, runtime, counterfactual))
     if forced:
         _write_forced_runtime(Path(args.output_root), runtime, counterfactual, budget, token, get_last_negative_trace())
@@ -130,6 +136,7 @@ def build_parser() -> argparse.ArgumentParser:
     probe.add_argument("--output-root", required=True)
     probe.add_argument("--forced", action="store_true")
     probe.add_argument("--no-counterfactual", action="store_true")
+    probe.add_argument("--lora-adapter-dir", default=None)
     probe.set_defaults(func=run_probe)
     return parser
 
