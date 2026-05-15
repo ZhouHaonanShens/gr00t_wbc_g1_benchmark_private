@@ -20,6 +20,7 @@ if str(REPO_ROOT) not in sys.path:
 
 
 from work.demo_utils import paths as demo_paths
+from work.recap.r7_1_recipe_plumbing.flags import RecipeFlags, build_argparse_group, recipe_flags_to_cli_args
 
 
 DEFAULT_BASE_MODEL = "nvidia/GR00T-N1.6-G1-PnPAppleToPlate"
@@ -1192,6 +1193,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=bool(DEFAULT_USE_WANDB),
         help_text="Enable Weights & Biases logging.",
     )
+    build_argparse_group(parser)
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -1333,6 +1335,9 @@ class RecapFinetuneFullWorkflow:
     def run(self) -> int:
         parser = _build_parser()
         args, forwarded = parser.parse_known_args()
+        recipe_flags = RecipeFlags.from_argparse(args)
+        recipe_forwarded = recipe_flags_to_cli_args(recipe_flags)
+        forwarded = [*recipe_forwarded, *list(forwarded)]
         repo_root = _repo_root()
         wrapper_ts = _dt.datetime.now().isoformat(timespec="seconds")
         summary_json_path = (

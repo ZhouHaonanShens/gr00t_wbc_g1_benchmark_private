@@ -27,6 +27,23 @@ except ModuleNotFoundError as exc:
 class SupportsRecapForward(Protocol):
     def forward(self, *args: object, **kwargs: object) -> object: ...
 
+def resolve_r7_1_recipe_flags(config: Any) -> Any | None:
+    from work.recap.r7_1_recipe_plumbing.flags import RecipeFlags
+
+    recipe_flags = getattr(config, "r7_1_recipe_flags", None)
+    if isinstance(recipe_flags, RecipeFlags) and not recipe_flags.is_default():
+        return recipe_flags
+    return None
+
+
+def build_r7_1_dual_loss_metadata(config: Any) -> dict[str, object]:
+    from work.recap.r7_1_recipe_plumbing.dual_loss_wiring import build_dual_loss_kwargs
+
+    recipe_flags = resolve_r7_1_recipe_flags(config)
+    if recipe_flags is None or not recipe_flags.enable_dual_loss:
+        return {}
+    return build_dual_loss_kwargs(recipe_flags)
+
 
 if _import_error is not None:
 
@@ -363,6 +380,12 @@ else:
             }
 
         def _dual_loss_config(self) -> DualLossConfig:
+            recipe_flags = resolve_r7_1_recipe_flags(self.config)
+            if recipe_flags is not None and recipe_flags.enable_dual_loss:
+                return DualLossConfig(
+                    alpha=float(recipe_flags.dual_loss_alpha),
+                    dropout_p=float(recipe_flags.indicator_dropout_p),
+                )
             alpha = float(
                 getattr(
                     self.config,
@@ -432,7 +455,7 @@ else:
                 config=self._dual_loss_config(),
             )
 
-            return {
+            result = {
                 "loss": dual["total_loss"],
                 "action_loss": conditioned_loss["action_loss"],
                 "action_mask": conditioned_loss["action_mask"],
@@ -443,6 +466,10 @@ else:
                 "loss_advantage_conditioned": conditioned_loss["loss"],
                 "alpha_dual_loss": dual,
             }
+            recipe_metadata = build_r7_1_dual_loss_metadata(self.config)
+            if recipe_metadata:
+                result["r7_1_dual_loss_kwargs"] = recipe_metadata
+            return result
 
     class GR00TRecapModel(Gr00tN1d6):
         def __init__(
@@ -476,6 +503,8 @@ else:
 
 
 __all__ = [
+    "build_r7_1_dual_loss_metadata",
+    "resolve_r7_1_recipe_flags",
     "GR00TRecapActionHead",
     "GR00TRecapModel",
     "SupportsRecapForward",

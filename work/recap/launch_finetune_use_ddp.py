@@ -34,6 +34,8 @@ NORMALIZATION_STATS_HASH_JSONL_FILENAME = (
 NORMALIZATION_STATS_HASH_SUMMARY_FILENAME = "normalization_stats_hash_summary_rank0.json"
 REPO_LOCAL_CENSUS_PREVIEW_LIMIT = 32
 REPO_LOCAL_TRAINABILITY_AUTHORITY_FIELD = "repo_local_trainability_authority"
+R7_1_RECIPE_FLAGS_FIELD = "r7_1_recipe_flags"
+R7_1_RECIPE_CLI_ARGS_FIELD = "r7_1_recipe_cli_args"
 REPO_LOCAL_TRAINABILITY_AUTHORITY_SCHEMA_VERSION = (
     "repo_local_trainability_authority_v1"
 )
@@ -2892,6 +2894,17 @@ def _pre_bind_and_collect_runtime_surface(*, requested_num_gpus: int) -> int | N
     return current_device
 
 
+def apply_r7_1_recipe_flags(*, config: Any, ft_config: Any) -> None:
+    recipe_flags = getattr(ft_config, R7_1_RECIPE_FLAGS_FIELD, None)
+    if recipe_flags is None or recipe_flags.is_default():
+        return
+    config.model.r7_1_recipe_flags = recipe_flags
+    config.data.r7_1_recipe_flags = recipe_flags
+    config.data.task_text_field = recipe_flags.carrier_text_field
+    config.training.r7_1_recipe_flags = recipe_flags
+    config.training.r7_1_recipe_cli_args = list(getattr(ft_config, R7_1_RECIPE_CLI_ARGS_FIELD, []))
+
+
 def apply_finetune_overrides(*, config: Any, ft_config: Any) -> bool:
     embodiment_tag = ft_config.embodiment_tag.value
 
@@ -2970,6 +2983,7 @@ def build_runtime_config(ft_config: Any) -> tuple[Any, bool]:
     )
     config.load_config_path = None
     use_ddp = apply_finetune_overrides(config=config, ft_config=ft_config)
+    apply_r7_1_recipe_flags(config=config, ft_config=ft_config)
     return config, use_ddp
 
 
@@ -2985,14 +2999,25 @@ def main() -> int:
     )
     from gr00t.experiment.experiment import run  # pyright: ignore[reportMissingImports]
 
-    ft_config = tyro.cli(
-        FinetuneConfig,
-        description=(
-            "Repo-local finetune launcher. Mirrors upstream launch_finetune.py, but "
-            "auto-enables config.training.use_ddp when num_gpus > 1 so stage3 pre-T3b "
-            "avoids the DeepSpeed branch without modifying submodules/."
-        ),
-    )
+    from work.recap.r7_1_recipe_plumbing.cli import split_recipe_args
+
+    recipe_flags, remaining_argv, recipe_cli_args = split_recipe_args(sys.argv[1:])
+    original_argv = list(sys.argv)
+    sys.argv = [sys.argv[0], *remaining_argv]
+    try:
+        ft_config = tyro.cli(
+            FinetuneConfig,
+            description=(
+                "Repo-local finetune launcher. Mirrors upstream launch_finetune.py, but "
+                "auto-enables config.training.use_ddp when num_gpus > 1 so stage3 pre-T3b "
+                "avoids the DeepSpeed branch without modifying submodules/."
+            ),
+        )
+    finally:
+        sys.argv = original_argv
+    if recipe_cli_args:
+        setattr(ft_config, R7_1_RECIPE_FLAGS_FIELD, recipe_flags)
+        setattr(ft_config, R7_1_RECIPE_CLI_ARGS_FIELD, list(recipe_cli_args))
 
     if ft_config.modality_config_path is not None:
         load_modality_config(ft_config.modality_config_path)
