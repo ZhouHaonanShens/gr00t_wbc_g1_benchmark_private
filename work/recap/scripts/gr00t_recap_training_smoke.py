@@ -20,6 +20,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from work.recap import advantage
 from work.recap import finetune_full as finetune_full_workflow
+from work.recap.identity import validate_preflight_report_for_entrypoint
 from work.demo_utils import paths as demo_paths
 
 
@@ -121,6 +122,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional override for the final wrapper summary JSON path.",
     )
     parser.add_argument(
+        "--canonical-preflight-report",
+        type=str,
+        default="",
+        help=(
+            "Required Phase-1 canonical identity STRICT_PROMOTION PASS report. "
+            "The smoke launcher fails before training materialization when missing or non-PASS."
+        ),
+    )
+    parser.add_argument(
+        "--preflight-only",
+        action="store_true",
+        help="Validate --canonical-preflight-report and exit before smoke-plan materialization.",
+    )
+    parser.add_argument(
         "--base-model",
         type=str,
         default=DEFAULT_BASE_MODEL,
@@ -179,6 +194,15 @@ def _resolve_repo_path(repo_root: Path, raw: str | Path) -> Path:
 
 def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     finetune_full_workflow._write_json(path, dict(payload))
+
+
+def _require_canonical_preflight_report(raw_report: str) -> Mapping[str, Any]:
+    report_text = str(raw_report or "").strip()
+    if not report_text:
+        raise ValueError(
+            "--canonical-preflight-report is required before GR00T training materialization"
+        )
+    return validate_preflight_report_for_entrypoint(Path(report_text), require_strict=True)
 
 
 def _emit_summary(
@@ -764,6 +788,9 @@ def materialize_flux_training_smoke(
     repo_root: Path = REPO_ROOT,
     delegate_runner: Callable[[Sequence[str], Path, Path], int] | None = None,
 ) -> dict[str, Any]:
+    canonical_preflight = _require_canonical_preflight_report(
+        str(args.canonical_preflight_report)
+    )
     plan = resolve_smoke_plan(
         args=args,
         profile=profile,
@@ -811,6 +838,8 @@ def materialize_flux_training_smoke(
         "orchestrator_python": str(plan["orchestrator_python"]),
         "delegate_runtime_python": str(plan["delegate_runtime_python"]),
         "delegate_runtime_python_requested": plan["delegate_runtime_python_requested"],
+        "canonical_preflight_report": str(args.canonical_preflight_report),
+        "canonical_preflight_reason_code": canonical_preflight.get("reason_code"),
         "requested_trainable_surface": str(plan["requested_trainable_surface"]),
         "trainable_surface": str(plan["trainable_surface"]),
         "fallback_applied": bool(plan["fallback_applied"]),
@@ -950,6 +979,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if bool(args.delegate_mode):
         return _delegate_main(argv)
+    canonical_preflight = _require_canonical_preflight_report(
+        str(args.canonical_preflight_report)
+    )
+    if bool(args.preflight_only):
+        print(
+            json.dumps(
+                {
+                    "status": "preflight_pass",
+                    "canonical_preflight_report": str(args.canonical_preflight_report),
+                    "canonical_preflight_reason_code": canonical_preflight.get("reason_code"),
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
     config_module, profile = load_training_smoke_config(
         smoke_mode=str(args.smoke_mode),
         config_module=str(args.config_module),

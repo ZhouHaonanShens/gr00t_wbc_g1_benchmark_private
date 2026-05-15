@@ -1,0 +1,18 @@
+{
+  "artifact_root": "agent/artifacts/recap_substrate_recovery/r7_2_uplift_probe/20260515T095201Z_trial_1",
+  "base_ckpt_abs_path": "/media/howard/DATA/Projects/gr00t_wbc_g1_benchmark_live/agent/artifacts/gr00t_recap_live/single_gpu_v2_full_update/stage1_gr00t_r2r4_closed_candidate_iter9_20260426T_nextZ/gr00t/g2_main_v2_full_training/checkpoint-2200",
+  "final_step": 0,
+  "final_verdict": "TRAINING_FAILED",
+  "gpu_id": 1,
+  "recipe_preset": "full_C1_C2_C5",
+  "runtime_log": "agent/runtime_logs/r7_2_uplift_probe/trial1_20260515T095201Z.log",
+  "runtime_log_sha256": "3a58e8f8812a85275589c451e532e66360413c01ceef7442edc651cbacf4aa55",
+  "schema": "r7_2_uplift_probe_trial_1_evidence_v1",
+  "scope_boundary": "R7.2 only: no R7.3, no MuJoCo, no C3/C4; trial failed closed before LoRA training because entrypoint save-hook is unresolved.",
+  "token_sha256": "9f7142e3a32f2cf030bd7cad538a6247bf60b81cf2bbd276f1dd48177770fd5d",
+  "total_gpu_seconds": 0.0463477290031733,
+  "trial_id": "trial-1",
+  "trial_report_sha256": "201cae76fd5a7ce1a7929de24aedfe8cb38537807d097ec09b7b03c8cdddf0a1",
+  "worker_failure_reason": "entrypoint_unresolved",
+  "worker_preflight_sha256": "a79efaae405d7fe7c10ad81233259b9bab38c8ae19aebfa4be604561653fdca2"
+}

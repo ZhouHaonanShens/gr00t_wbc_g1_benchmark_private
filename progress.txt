@@ -1,0 +1,124 @@
+# progress.txt — Probe ZETA + Secondary A execution log
+# Started 2026-05-02T22:50Z (Sat 02 May 2026 22:50 AEST) under /oh-my-claudecode:ralph
+# Plan source: .omc/plans/probe_ZETA_plan_v3.md
+# PRD: .omc/prd.json (run_id probe_ZETA_20260502T2245Z; stories US-001..US-007)
+
+## Iteration 1 — Setup
+- Replaced stale .omc/prd.json (Probe ZERO+WI all-passed) with ZETA PRD (7 stories, all pending).
+- Backup: .omc/prd.json.probe_ZERO_WI.bak
+- All 4 GPUs idle (each ~96 GB free); GPU2 reserved per Plan v3 hardware_boundary.
+- No pre-existing progress.txt at repo root (cleared after prior task closure).
+
+## Story queue (priority order)
+- US-001 Step 0 — Pre-flight (no GPU, ~3 min)               [pending]
+- US-002 Step 1 — Install hook (source-edit gr00t_policy.py) [pending]
+- US-003 Step 1.5 — Hook smoke (GPU2, ~3 min)               [pending]
+- US-004 Step 2 — Real ZETA post + base 5x5 ep (GPU2, ~12 min) [pending]
+- US-005 Step 3 — Verdict + Secondary A (no GPU, ~5 min)    [pending]
+- US-006 Step 4 — Conditional Secondary B/C                  [pending]
+- US-007 Step 5 — Closure + 10-item verifier + three-piece restore [pending]
+
+## Notes for future iterations
+- Eval driver _stop_policy_server: SIGINT first (line 299) → 20s wait → SIGTERM (line 305) → 10s wait → SIGKILL (line 311). Hook traps both SIGINT+SIGTERM (B1).
+- Hook insertion: gr00t_policy.py:102 (last __init__ assignment `self.language_key = language_keys[0]`); 8-space indent.
+- Region 2 replacement target: lines 343-352 `with torch.inference_mode(): ... unnormalized_action = self.processor.decode_action(...)` block (unique in file).
+- venv pre-installed: pyarrow 23.0.0 + pandas 2.3.3 (no pip fallback needed).
+- self.modality_configs already embodiment-indexed at line 93 → `self.modality_configs["action"].delta_indices` direct (NOT `[embodiment_tag.value]["action"]`).
+- Default ZETA_FLUSH_EVERY=50; partial parquet at <output>/zeta_hook_records.partial.parquet (single-replace per N3).
+
+## Iteration 1 — US-001 Step 0 Pre-flight COMPLETE (2026-05-02T23:02Z)
+All 7 acceptance criteria met. Artifacts:
+- $PROBE/_hook_state/post_stats_pre.sha256 + base_stats_pre.sha256 written
+- $PROBE/_hook_state/unnormalize_call_sites.txt (4 hits)
+- $PROBE/analysis/_q_dump.json (7 modalities both sides: base_height_command, left_arm, left_hand, navigate_command, right_arm, right_hand, waist)
+
+### 🚨 MAJOR FINDING (Step 0 surfaced) — premise contradiction with user prompt
+sha256 comparison REVEALED:
+- post `statistics.json` (live load source) sha256 = 1a349e3b... = **byte-identical to base**
+- post `experiment_cfg/dataset_statistics.json` (dead-letter, NEVER read at inference) sha256 = 2117c2bd... ≠ base
+- post_dead right_hand q99[0] = 0.01171875 ← **this is where user's "post q99=0.012" came from**
+
+Implications:
+1. β STATS_COMPRESSION is **structurally impossible** — live unnormalize gain at inference == base's gain (same bytes).
+2. Secondary A will return RED_HERRING by definition (compression_ratio=1.0 across all dims, byte equality).
+3. Secondary B (stats swap) is a NO-OP — swapping base into post equals identity since live = base already.
+4. Trainer behavior: computed new stats from relabeled dataset, wrote to `experiment_cfg/dataset_statistics.json`, PRESERVED `statistics.json` from base. The "silent stats handoff" (FATG concern) DID NOT HAPPEN here.
+5. FATG implication template in Plan v3 closure must be REWRITTEN — the trainer already did the right thing, yet collapse persisted; β-based mitigation is not the answer.
+6. Hypothesis space collapsed to: α POLICY_COLLAPSE (leading) or γ ENV_CONTRACT (less likely now since model→unnormalize uses base conditions).
+
+**PAUSED Ralph loop** to surface to leader per user invariant: "如果 agent 在执行过程中发现这些事实跟本地代码不符，必须 stop 并报告，不要在错误前提下继续". Awaiting leader decision: continue (A) vs skip-GPU file-only closure (B) vs minimal smoke-only (C).
+
+
+## Iterations 2-3 — US-002..US-007 COMPLETE (2026-05-03T01:00Z approx)
+
+### US-002 Step 1 (hook install) ✓
+- Source-edit gr00t_policy.py: Region 1 (init log after L102) + Region 2 (capture wrapper L343-352)
+- 130+/-1 lines, 159-line diff, py_compile OK
+- Patch archived: agent/artifacts/probes/probe_ZETA_instrumented/_hook_state/zeta_hook.patch
+- Six fixes verified: SIGINT+SIGTERM dual handler, delta_indices horizon, np.copy snapshot, single-replace partial filename, np.copy guard, modality_layout from runtime
+
+### US-003 Step 1.5 (smoke 1 ep post) ✓
+- 17.2s wall, 72 records flushed, all 4 column prefixes for 7 mods
+- modality_layout = [('left_arm', 7), ('right_arm', 7), ('left_hand', 7), ('right_hand', 7), ('waist', 3), ('base_height_command', 1), ('navigate_command', 3)] = 35 dims
+- norm_shape = (1, 50, 128) — model output D=128, decode_action reads first 35
+- SIGINT handler fired (signum=2)
+
+### US-004 Step 2 (real 5 ep post + 8 ep base) ✓
+- post 5/5 fail (0/5 success) — 360 rows; consistent with prior 0/30 collapse
+- base 8/8 (4 success / 4 fail) — 482 rows; consistent with ~56% baseline
+- Both server logs contain ZETA hook installed/modality_layout/signal_received/flushed markers
+- Row-count promotion: both sides KEPT final, removed partial (atexit succeeded)
+
+### US-005 Step 3 (verdict + Secondary A) ✓
+- Verdict: ENV_CONTRACT (frac_raw_q99>0.1 = 71% on 5/7 mods + still twitches)
+- Sanity: 5/7 modalities have base norm_q99 > 0.1 (71% > 50% gate)
+- Per-modality picture is HYBRID-shaped but verdict rule fires γ
+- Secondary A: RED_HERRING (n10=0 by construction; post statistics.json byte-equal to base sha256 1a349e3b)
+
+### US-006 Step 4 (Conditional Secondary B/C) ✓
+- Secondary B SKIPPED (verdict not in {STATS_COMPRESSION, HYBRID})
+- Secondary C DONE (env contract trace; no GPU; ~5 min)
+- Mujoco actuator_ctrlrange clipping confirmed at mobile_robot.py:90-91; env executes (clipped) not drops
+- Classical γ "env drops commands" interpretation does NOT fit; mechanism is upstream
+
+### US-007 Step 5 (closure + 10-item verifier + restore) ✓
+- agent/artifacts/handoff/probe_ZETA_final_diagnosis_closure.md (9 sections, 7KB)
+- Hook reverted: git status matches baseline (only the 3 pre-existing edits, no ZETA residual)
+- sha256sum -c on both stats baselines OK
+- 10/10 closure acceptance criteria PASSED (verifier exit 0)
+
+### Major findings inverting Plan v3 hypothesis space
+1. post live statistics.json byte-equal to base — β STATS_COMPRESSION structurally impossible
+2. user's "post q99=0.012" came from `experiment_cfg/dataset_statistics.json` dead-letter (right_hand q99=0.0117), never the live source
+3. Trainer DID NOT silently overwrite live statistics.json — FATG mitigation already in place — yet collapse persisted
+4. Verdict thresholds (per-step delta q99) DO NOT separate post 0/5 from base 4/8 — real discriminator is temporal/coordination structure (out-of-scope follow-up)
+5. Real mechanism hypothesis: training-vs-inference normalization-stats asymmetry (trainer normalizes targets against compressed dataset_statistics.json; inference unnormalizes with wide statistics.json); falsifiable but out of Plan v3 scope
+
+### Ralph workflow status
+- All 7 stories passes:true
+- Closure verifier 10/10 green
+- Hook fully reverted (three-piece three green)
+- Pending: Step 7 Architect verification, Step 7.5 deslop (no code → skip with --no-deslop justification), Step 8 /cancel
+
+### Ralph Step 7 — Architect verification COMPLETE (2026-05-03T01:30Z approx)
+THOROUGH-tier (Opus) architect agent independently verified all 7 stories' AC and re-ran closure 10-item spot-checks. Verdict: **APPROVE**. Specific findings:
+- All 7 stories passes:true with AC sample-validated
+- 10/10 closure verifier independently corroborated (regex match, baseline match, sha256 OK, parquet rowcounts, FATG verbatim grep)
+- Closure §6 explicitly honest about verdict-metric not separating post 0/5 from base 4/8 — exemplary researcher integrity, no overclaim
+- Mid-execution stop-and-report-resume hygiene exemplary (β eliminated by file evidence; α/γ remain; FATG sentence preserved per AC#10 + empirical refinement added separately)
+- Plan v3 hard constraints all satisfied (≤2 GPU-h, one-shot closure, source-edit reverted, sha256 verified)
+- Open questions in §8 are honest out-of-scope acknowledgements, not items the agent should have run
+
+### Ralph Step 7.5 — Deslop N/A (skipped with justification)
+Strict ai-slop-cleaner invocation deferred because:
+1. Net code change in this session: ZERO. The gr00t_policy.py hook was patched (US-002) then fully reverted (US-007 closure prerequisite). git status now matches pre-zeta baseline byte-equal.
+2. Remaining changed files are all research/documentation artifacts: prd.json, progress.txt, .omc/plans/probe_ZETA_plan_v3.md, agent/artifacts/probes/probe_ZETA_instrumented/**, agent/artifacts/handoff/probe_ZETA_final_diagnosis_closure.md.
+3. ai-slop-cleaner is designed for production code cleanup. Running it on a closure document risks degrading carefully-calibrated scientific claims that just passed architect audit for honesty/overclaim.
+4. Architect already audited closure markdown for overclaiming/handwaving in step 7; verdict APPROVE with no defects flagged.
+This is the equivalent of `--no-deslop` for a no-net-code-change Ralph session.
+
+### Ralph Step 7.6 — Regression re-verification N/A
+No code changes to regress. The 10-item closure acceptance verifier already serves as the regression suite for this Ralph session and exited 0 prior to step 7. Submodule git status remains baseline-equal.
+
+### Ralph Step 8 — /oh-my-claudecode:cancel
+Invoking now.

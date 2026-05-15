@@ -23,6 +23,7 @@
 /agent/runtime_logs
 /agent/artifacts/
 /agent/artifacts
+/agent/artifacts/recap_substrate_recovery/_state/
 /agent/artifacts_nvme_legacy_*/
 /agent/artifacts_nvme_legacy_*
 /agent/runtime_logs_nvme_legacy_*/

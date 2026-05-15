@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections
+import dataclasses
 from dataclasses import dataclass
 import json
 import math
@@ -10,6 +11,14 @@ import os
 from pathlib import Path
 import sys
 from typing import Any
+
+from work.openpi.recap.real_variant_policy_contract import (
+    LIBERO_ASSET_ID,
+    POLICY_CONFIG_MISMATCH_BLOCKER,
+    REAL_VARIANT_DATA_FACTORY_KIND,
+    REAL_VARIANT_POLICY_CONFIG_NAME,
+    extract_policy_contract,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -20,6 +29,13 @@ LIBERO_RESIZE_SIZE = 224
 LIBERO_DUMMY_ACTION = [0.0] * 6 + [-1.0]
 LIBERO_NUM_STEPS_WAIT = 10
 LIBERO_REPLAN_STEPS = 5
+
+
+@dataclass(frozen=True)
+class LocalCheckpointPolicySpec:
+    config_name: str
+    manifest_path: Path | None = None
+    policy_contract: dict[str, Any] | None = None
 
 
 def _initialize_jax_runtime() -> None:
@@ -35,20 +51,16 @@ def _initialize_jax_runtime() -> None:
 
 
 def load_variant_A(authority_manifest_path: Path):
-    """Load variant A (pi0_libero) policy. Raises BLOCK_A_CHECKPOINT_LOAD_FAILED on error."""
+    """Load variant A (pi0_libero) policy.
+
+    The blind-calibration path passes an authority manifest, while the v22 formal
+    eval authority manifest may pass the resolved stock checkpoint directory
+    directly.  Accept both forms so the runner does not depend on which
+    authority layer supplied the stock pi0_libero source.
+    """
     _initialize_jax_runtime()
     try:
-        manifest = json.loads(authority_manifest_path.read_text(encoding="utf-8"))
-        local_resolved_path = manifest.get("local_resolved_path")
-        if not local_resolved_path:
-            raise RuntimeError("BLOCK_A_STOCK_AUTHORITY_MISSING")
-        local_path = Path(str(local_resolved_path)).expanduser()
-        if not local_path.exists():
-            raise RuntimeError("BLOCK_A_STOCK_AUTHORITY_MISSING")
-        try:
-            checkpoint_dir = _resolve_checkpoint_dir(local_path)
-        except FileNotFoundError as exc:
-            raise RuntimeError("BLOCK_A_STOCK_AUTHORITY_MISSING") from exc
+        checkpoint_dir = _resolve_variant_a_checkpoint_dir(authority_manifest_path)
         return _load_libero_policy(checkpoint_dir, config_name="pi0_libero")
     except RuntimeError as exc:
         if str(exc).startswith("BLOCK_A_STOCK_AUTHORITY_MISSING"):
@@ -56,6 +68,29 @@ def load_variant_A(authority_manifest_path: Path):
         raise RuntimeError("BLOCK_A_CHECKPOINT_LOAD_FAILED:" + str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError("BLOCK_A_CHECKPOINT_LOAD_FAILED:" + str(exc)) from exc
+
+
+def _resolve_variant_a_checkpoint_dir(authority_or_checkpoint_path: Path) -> Path:
+    source_path = authority_or_checkpoint_path.expanduser()
+    if source_path.is_dir():
+        try:
+            return _resolve_checkpoint_dir(source_path)
+        except FileNotFoundError as exc:
+            raise RuntimeError("BLOCK_A_STOCK_AUTHORITY_MISSING") from exc
+    if not source_path.is_file():
+        raise RuntimeError("BLOCK_A_STOCK_AUTHORITY_MISSING")
+
+    manifest = json.loads(source_path.read_text(encoding="utf-8"))
+    local_resolved_path = manifest.get("local_resolved_path")
+    if not local_resolved_path:
+        raise RuntimeError("BLOCK_A_STOCK_AUTHORITY_MISSING")
+    local_path = Path(str(local_resolved_path)).expanduser()
+    if not local_path.exists():
+        raise RuntimeError("BLOCK_A_STOCK_AUTHORITY_MISSING")
+    try:
+        return _resolve_checkpoint_dir(local_path)
+    except FileNotFoundError as exc:
+        raise RuntimeError("BLOCK_A_STOCK_AUTHORITY_MISSING") from exc
 
 
 def load_variant_B_optional(local_checkpoint_path: Path):
@@ -66,8 +101,8 @@ def load_variant_B_optional(local_checkpoint_path: Path):
         return None
     try:
         checkpoint_dir = _resolve_checkpoint_dir(local_path)
-        config_name = _infer_local_checkpoint_config(local_path, checkpoint_dir)
-        return _load_libero_policy(checkpoint_dir, config_name=config_name)
+        policy_spec = _resolve_local_checkpoint_policy_spec(local_path, checkpoint_dir)
+        return _load_libero_policy(checkpoint_dir, policy_spec=policy_spec)
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError("BLOCK_B_CHECKPOINT_LOAD_FAILED:" + str(exc)) from exc
 
@@ -229,15 +264,51 @@ def _looks_like_openpi_checkpoint(path: Path) -> bool:
     )
 
 
-def _load_libero_policy(checkpoint_dir: Path, *, config_name: str):
+def _load_libero_policy(
+    checkpoint_dir: Path,
+    *,
+    config_name: str | None = None,
+    policy_spec: LocalCheckpointPolicySpec | None = None,
+):
     from openpi.policies import policy_config
     from openpi.training import config as training_config
 
-    train_config = training_config.get_config(config_name)
+    if policy_spec is None:
+        if config_name is None:
+            raise ValueError("config_name or policy_spec is required")
+        policy_spec = LocalCheckpointPolicySpec(config_name=config_name)
+    train_config = _build_train_config_for_policy_spec(
+        training_config,
+        policy_spec=policy_spec,
+    )
     return policy_config.create_trained_policy(train_config, checkpoint_dir)
 
 
 def _infer_local_checkpoint_config(local_path: Path, checkpoint_dir: Path) -> str:
+    return _resolve_local_checkpoint_policy_spec(local_path, checkpoint_dir).config_name
+
+
+def _resolve_local_checkpoint_policy_spec(
+    local_path: Path,
+    checkpoint_dir: Path,
+) -> LocalCheckpointPolicySpec:
+    manifest_path, manifest = _read_export_manifest(local_path, checkpoint_dir)
+    if manifest is not None:
+        policy_contract = extract_policy_contract(manifest)
+        if policy_contract is not None:
+            _assert_real_variant_policy_contract_compatible(policy_contract)
+            return LocalCheckpointPolicySpec(
+                config_name=REAL_VARIANT_POLICY_CONFIG_NAME,
+                manifest_path=manifest_path,
+                policy_contract=policy_contract,
+            )
+        schema = str(manifest.get("schema_version", ""))
+        if schema.startswith("openpi_real_variant_export"):
+            raise RuntimeError(
+                f"{POLICY_CONFIG_MISMATCH_BLOCKER}:"
+                f"real_variant_export_manifest_missing_policy_contract:{manifest_path}"
+            )
+
     for path in (
         local_path / "checkpoint_provenance.json",
         checkpoint_dir / "checkpoint_provenance.json",
@@ -250,8 +321,96 @@ def _infer_local_checkpoint_config(local_path: Path, checkpoint_dir: Path) -> st
         payload = json.loads(path.read_text(encoding="utf-8"))
         for value in _walk_config_values(payload):
             if value in {"pi0_libero", "pi05_libero"}:
-                return value
-    return "pi0_libero"
+                return LocalCheckpointPolicySpec(config_name=value)
+    return LocalCheckpointPolicySpec(config_name="pi0_libero")
+
+
+def _read_export_manifest(
+    local_path: Path,
+    checkpoint_dir: Path,
+) -> tuple[Path | None, dict[str, Any] | None]:
+    for path in (
+        local_path / "export_manifest.json",
+        checkpoint_dir / "export_manifest.json",
+        checkpoint_dir.parent / "export_manifest.json",
+        local_path / "checkpoint" / "export_manifest.json",
+        local_path / "best" / "export_manifest.json",
+    ):
+        if not path.is_file():
+            continue
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return path, payload
+    return None, None
+
+
+def _assert_real_variant_policy_contract_compatible(
+    policy_contract: dict[str, Any],
+) -> None:
+    data_factory_kind = policy_contract.get("data_factory_kind")
+    if data_factory_kind != REAL_VARIANT_DATA_FACTORY_KIND:
+        raise RuntimeError(
+            f"{POLICY_CONFIG_MISMATCH_BLOCKER}:"
+            f"unsupported_data_factory_kind:{data_factory_kind}"
+        )
+    if bool(policy_contract.get("extra_delta_transform", False)):
+        raise RuntimeError(
+            f"{POLICY_CONFIG_MISMATCH_BLOCKER}:"
+            "real_variant_declares_extra_delta_transform_true"
+        )
+    for graph_key in ("training_transform_graph", "inference_transform_graph"):
+        graph = policy_contract.get(graph_key)
+        if not isinstance(graph, dict):
+            continue
+        outputs = graph.get("outputs")
+        if outputs is None:
+            continue
+        if list(outputs) != ["LiberoOutputs"]:
+            raise RuntimeError(
+                f"{POLICY_CONFIG_MISMATCH_BLOCKER}:"
+                f"{graph_key}_outputs_mismatch:{outputs}"
+            )
+
+
+def _build_train_config_for_policy_spec(
+    training_config: Any,
+    *,
+    policy_spec: LocalCheckpointPolicySpec,
+):
+    if policy_spec.config_name != REAL_VARIANT_POLICY_CONFIG_NAME:
+        return training_config.get_config(policy_spec.config_name)
+    if policy_spec.policy_contract is None:
+        raise RuntimeError(
+            f"{POLICY_CONFIG_MISMATCH_BLOCKER}:"
+            f"{REAL_VARIANT_POLICY_CONFIG_NAME}_missing_policy_contract"
+        )
+    base_config_name = str(
+        policy_spec.policy_contract.get("base_train_config_name", "pi0_libero")
+    )
+    base_config = training_config.get_config(base_config_name)
+    data_factory = training_config.SimpleDataConfig(
+        repo_id=LIBERO_ASSET_ID,
+        assets=training_config.AssetsConfig(asset_id=LIBERO_ASSET_ID),
+        base_config=training_config.DataConfig(
+            prompt_from_task=False,
+            action_sequence_keys=("action",),
+        ),
+        data_transforms=_build_recap_real_variant_inference_transforms,
+    )
+    return dataclasses.replace(
+        base_config,
+        name=REAL_VARIANT_POLICY_CONFIG_NAME,
+        data=data_factory,
+    )
+
+
+def _build_recap_real_variant_inference_transforms(model_config: Any):
+    import openpi.transforms as transforms
+    from openpi.policies import libero_policy
+
+    return transforms.Group(
+        inputs=[libero_policy.LiberoInputs(model_type=model_config.model_type)],
+        outputs=[libero_policy.LiberoOutputs()],
+    )
 
 
 def _walk_config_values(value: Any) -> tuple[str, ...]:

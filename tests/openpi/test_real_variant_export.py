@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import errno
+import functools
 import pickle
 from pathlib import Path
 import shutil
@@ -15,7 +16,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
-from work.openpi.recap.real_variant_export import (
+from work.openpi.recap.real_variant_export import (  # noqa: E402
     DEFAULT_LOCAL_SAFE_CUDA_VISIBLE_DEVICES,
     DEFAULT_LOCAL_SAFE_BATCH_SIZE,
     DEFAULT_LOCAL_SAFE_FSDP_DEVICES,
@@ -40,15 +41,16 @@ from work.openpi.recap.real_variant_export import (
     _validate_resume_target_step,
     _build_subprocess_env,
     _copytree,
+    _real_variant_transform_kwargs,
     _resolve_train_resource_settings,
 )
-import work.openpi.recap.checkpoint as checkpoint_mod
-from work.openpi.recap.checkpoint import (
+import work.openpi.recap.checkpoint as checkpoint_mod  # noqa: E402
+from work.openpi.recap.checkpoint import (  # noqa: E402
     SERVEABLE_ARTIFACT_COPY_MODE,
     SERVEABLE_ARTIFACT_HARDLINK_MODE,
     _replace_tree_with_durable_links_or_copy,
 )
-from work.openpi.prompting.routes import (
+from work.openpi.prompting.routes import (  # noqa: E402
     FIXEDADV_CONSTANT_CONSUMER_MODE,
     RECAP_RELABEL_CONSUMER_MODE,
     SHUFFLED_ADV_DIAG_CONSUMER_MODE,
@@ -267,6 +269,33 @@ def test_build_subprocess_env_preserves_explicit_runtime_overrides(monkeypatch, 
     assert env[TRAIN_DEFAULT_SAVE_INTERVAL_ENV] == "5"
     assert env[TRAIN_SAVE_INTERVAL_SOURCE_ENV] == "env_override"
     _assert_expected_subprocess_cache_env(env, runtime_dir)
+
+
+def test_real_variant_transform_kwargs_requires_consumer_mode() -> None:
+    train_config = SimpleNamespace(
+        name="pi0_libero",
+        data=SimpleNamespace(data_transforms=functools.partial(lambda: None)),
+    )
+
+    with pytest.raises(RuntimeError, match="missing_consumer_mode"):
+        _real_variant_transform_kwargs(train_config)
+
+
+def test_real_variant_transform_kwargs_reads_partial_keywords() -> None:
+    train_config = SimpleNamespace(
+        data=SimpleNamespace(
+            data_transforms=functools.partial(
+                lambda: None,
+                consumer_mode=FIXEDADV_CONSTANT_CONSUMER_MODE,
+                fixed_indicator_mode="omit",
+            )
+        ),
+    )
+
+    assert _real_variant_transform_kwargs(train_config) == {
+        "consumer_mode": FIXEDADV_CONSTANT_CONSUMER_MODE,
+        "fixed_indicator_mode": "omit",
+    }
 
 
 def test_resolve_resume_checkpoint_plan_prefers_native_resume_when_train_state_exists(
